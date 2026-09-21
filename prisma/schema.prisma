@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Client {
+  id               String    @id @default(uuid())
+  name             String
+  location         String    @default("Dakar, Sénégal")
+  phone            String?
+  email            String?
+  projectName      String?
+  marketNumber     String?
+  contractNumber   String?
+  defaultProduct   String    @default("Latérite crue")
+  defaultUnitPrice Int       @default(600)
+  hasTva           Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  invoices         Invoice[]
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  clientId      String
+  invoiceNumber String
+  invoiceDate   DateTime      @default(now())
+  periodStart   DateTime
+  periodEnd     DateTime
+  hasTva        Boolean       @default(false)
+  tvaRate       Float         @default(18)
+  totalHt       Float         @default(0)
+  totalTva      Float         @default(0)
+  totalTtc      Float         @default(0)
+  status        InvoiceStatus @default(DRAFT)
+  createdAt     DateTime      @default(now())
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items         InvoiceItem[]
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  designation String  @default("Fourniture latérite crue")
+  quantity    Float
+  unit        String  @default("m³")
+  unitPrice   Float
+  total       Float
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+}
