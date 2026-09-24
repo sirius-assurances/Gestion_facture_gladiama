@@ -16,6 +16,10 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Gladiama Factures",
   description: "Générez vos factures GLADIAMA en quelques secondes.",
+  icons: {
+    icon: "/images/logo-gladiama.png",
+    apple: "/images/logo-gladiama.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
