@@ -5,7 +5,8 @@ import { ArrowLeft, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getStoredClients, saveClients, type ClientRecord } from "@/lib/invoice-storage";
+import { getClients, updateClient } from "@/app/actions/billing";
+import type { ClientRecord } from "@/lib/invoice-storage";
 
 export default function ClientEditPage() {
   const params = useParams();
@@ -13,8 +14,11 @@ export default function ClientEditPage() {
   const [client, setClient] = useState<ClientRecord | null>(null);
 
   useEffect(() => {
-    const found = getStoredClients().find((item) => item.id === params.id);
-    setClient(found ?? null);
+    async function loadClient() {
+      const found = (await getClients()).find((item) => item.id === params.id);
+      setClient(found ?? null);
+    }
+    void loadClient();
   }, [params.id]);
 
   if (!client) {
@@ -31,9 +35,8 @@ export default function ClientEditPage() {
     setClient((current) => (current ? { ...current, [key]: value } : current));
   };
 
-  const handleSave = () => {
-    const updated = getStoredClients().map((item) => (item.id === client.id ? client : item));
-    saveClients(updated);
+  const handleSave = async () => {
+    await updateClient(client);
     router.push("/clients");
   };
 

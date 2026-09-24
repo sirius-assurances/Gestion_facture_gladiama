@@ -4,20 +4,21 @@ import Link from "next/link";
 import { ArrowLeft, MapPin, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { deleteClient, getStoredClients, type ClientRecord } from "@/lib/invoice-storage";
+import { getClients, removeClient } from "@/app/actions/billing";
+import type { ClientRecord } from "@/lib/invoice-storage";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    setClients(getStoredClients());
+    void getClients().then(setClients);
   }, []);
 
   const filteredClients = clients.filter((client) => `${client.name} ${client.location}`.toLowerCase().includes(query.toLowerCase()));
 
-  const handleDelete = (clientId: string) => {
-    const nextClients = deleteClient(clientId);
+  const handleDelete = async (clientId: string) => {
+    const nextClients = await removeClient(clientId);
     setClients(nextClients);
   };
 

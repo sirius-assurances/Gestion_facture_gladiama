@@ -5,14 +5,12 @@ import { ArrowLeft, FileText, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
+import { getClients, getInvoices, updateInvoice } from "@/app/actions/billing";
 import {
   getNextInvoiceStatus,
   getInvoiceDueDate,
-  getStoredClients,
-  getStoredInvoices,
   invoiceStatusMeta,
   invoiceStatusOrder,
-  saveInvoices,
   type InvoiceRecord,
 } from "@/lib/invoice-storage";
 
@@ -25,10 +23,13 @@ export default function InvoiceDetailsPage() {
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
-    const storedInvoices = getStoredInvoices();
-    const found = storedInvoices.find((item) => item.id === params.id);
-    setInvoice(found ?? null);
-    setClients(getStoredClients().map(({ id, name }) => ({ id, name })));
+    async function loadInvoice() {
+      const [storedInvoices, storedClients] = await Promise.all([getInvoices(), getClients()]);
+      const found = storedInvoices.find((item) => item.id === params.id);
+      setInvoice(found ?? null);
+      setClients(storedClients.map(({ id, name }) => ({ id, name })));
+    }
+    void loadInvoice();
   }, [params.id]);
 
   const totals = useMemo(() => {
@@ -52,18 +53,8 @@ export default function InvoiceDetailsPage() {
     setInvoice((current) => (current ? { ...current, [key]: value } : current));
   };
 
-  const handleSave = () => {
-    const updatedInvoices = getStoredInvoices().map((item) =>
-      item.id === invoice.id
-        ? {
-            ...invoice,
-            totalHt: totals.totalHt,
-            totalTva: totals.totalTva,
-            totalTtc: totals.totalTtc,
-          }
-        : item,
-    );
-    saveInvoices(updatedInvoices);
+  const handleSave = async () => {
+    await updateInvoice({ ...invoice, totalHt: totals.totalHt, totalTva: totals.totalTva, totalTtc: totals.totalTtc });
     router.push("/invoices");
   };
 

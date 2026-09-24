@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { buildInvoiceRecord, getStoredClients, getStoredInvoices, saveInvoices, type ClientRecord } from "@/lib/invoice-storage";
+import { createInvoice, getClients, getInvoices } from "@/app/actions/billing";
+import type { ClientRecord } from "@/lib/invoice-storage";
 import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
 
@@ -23,18 +24,23 @@ export default function InvoiceForm() {
   const [dueDate, setDueDate] = useState("2026-10-17");
   const [saved, setSaved] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
+  const [invoiceCount, setInvoiceCount] = useState(0);
 
   useEffect(() => {
-    const storedClients = getStoredClients();
-    setClients(storedClients);
-    const preferredClientId = searchParams.get("client");
-    const initialClient = storedClients.find((client) => client.id === preferredClientId) ?? storedClients[0];
+    async function loadForm() {
+      const [storedClients, storedInvoices] = await Promise.all([getClients(), getInvoices()]);
+      setClients(storedClients);
+      setInvoiceCount(storedInvoices.length);
+      const preferredClientId = searchParams.get("client");
+      const initialClient = storedClients.find((client) => client.id === preferredClientId) ?? storedClients[0];
 
-    if (initialClient) {
-      setClientName(initialClient.name);
-      setUnitPrice(initialClient.defaultUnitPrice);
-      setHasTva(initialClient.hasTva);
+      if (initialClient) {
+        setClientName(initialClient.name);
+        setUnitPrice(initialClient.defaultUnitPrice);
+        setHasTva(initialClient.hasTva);
+      }
     }
+    void loadForm();
   }, [searchParams]);
 
   const totals = useMemo(() => {
@@ -55,7 +61,7 @@ export default function InvoiceForm() {
   function getPdfData(): InvoicePdfData {
     const client = clients.find((item) => item.name === clientName);
     return {
-      invoiceNumber: getStoredInvoices().length ? `N°${getStoredInvoices().length + 1}` : "N°1",
+      invoiceNumber: `N°${invoiceCount + 1}`,
       clientName,
       clientLocation: client?.location ?? "Dakar, Sénégal",
       projectName: client?.projectName,
@@ -73,9 +79,10 @@ export default function InvoiceForm() {
     };
   }
 
-  function handleSave() {
-    const invoice = buildInvoiceRecord({
+  async function handleSave() {
+    const invoice = {
       client: clientName,
+      clientId: clients.find((client) => client.name === clientName)?.id,
       periodStart,
       periodEnd,
       dueDate,
@@ -86,12 +93,10 @@ export default function InvoiceForm() {
       totalHt: totals.totalHt,
       totalTva: totals.totalTva,
       totalTtc: totals.totalTtc,
-      status: "Brouillon",
-    });
-
-    const existing = getStoredInvoices();
-    const next = [invoice, ...existing];
-    saveInvoices(next);
+      status: "Brouillon" as const,
+    };
+    const next = await createInvoice(invoice);
+    setInvoiceCount(next.length);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2500);
   }
@@ -217,7 +222,7 @@ export default function InvoiceForm() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.15em] text-white/50">Aperçu total</p>
-            <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture N°{getStoredInvoices().length + 1}</p>
+            <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture N°{invoiceCount + 1}</p>
           </div>
         </div>
 

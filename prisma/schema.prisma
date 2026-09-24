@@ -4,7 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
+  schemas  = ["facturation"]
 }
 
 model Client {
@@ -17,43 +18,58 @@ model Client {
   marketNumber     String?
   contractNumber   String?
   defaultProduct   String    @default("Latérite crue")
-  defaultUnitPrice Int       @default(600)
+  defaultUnitPrice Decimal   @default(600) @db.Decimal(15, 2)
   hasTva           Boolean   @default(false)
   createdAt        DateTime  @default(now())
   invoices         Invoice[]
+
+  @@schema("facturation")
+  @@index([name])
 }
 
 model Invoice {
   id            String        @id @default(uuid())
   clientId      String
-  invoiceNumber String
+  invoiceNumber String        @unique
   invoiceDate   DateTime      @default(now())
   periodStart   DateTime
   periodEnd     DateTime
+  dueDate       DateTime
   hasTva        Boolean       @default(false)
-  tvaRate       Float         @default(18)
-  totalHt       Float         @default(0)
-  totalTva      Float         @default(0)
-  totalTtc      Float         @default(0)
+  tvaRate       Decimal       @default(18) @db.Decimal(5, 2)
+  totalHt       Decimal       @default(0) @db.Decimal(15, 2)
+  totalTva      Decimal       @default(0) @db.Decimal(15, 2)
+  totalTtc      Decimal       @default(0) @db.Decimal(15, 2)
   status        InvoiceStatus @default(DRAFT)
   createdAt     DateTime      @default(now())
   client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   items         InvoiceItem[]
+
+  @@schema("facturation")
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([dueDate])
 }
 
 model InvoiceItem {
   id          String  @id @default(uuid())
   invoiceId   String
   designation String  @default("Fourniture latérite crue")
-  quantity    Float
+  quantity    Decimal  @db.Decimal(15, 3)
   unit        String  @default("m³")
-  unitPrice   Float
-  total       Float
+  unitPrice   Decimal  @db.Decimal(15, 2)
+  total       Decimal  @db.Decimal(15, 2)
   invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@schema("facturation")
+  @@index([invoiceId])
 }
 
 enum InvoiceStatus {
   DRAFT
   SENT
   PAID
+
+  @@schema("facturation")
 }

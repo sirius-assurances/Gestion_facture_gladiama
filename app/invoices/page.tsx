@@ -4,19 +4,16 @@ import Link from "next/link";
 import { ArrowLeft, Check, Eye, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
+import { getInvoices, removeInvoice, updateInvoiceStatus as updateInvoiceStatusInDatabase } from "@/app/actions/billing";
 import {
-  deleteInvoice,
   getInvoiceDueDate,
   isInvoiceOverdue,
   getNextInvoiceStatus,
-  getStoredInvoices,
   invoiceStatusMeta,
   invoiceStatusOrder,
   invoiceStatusStyles,
-  saveInvoices,
   type InvoiceRecord,
   type InvoiceStatus,
-  updateInvoiceStatus,
 } from "@/lib/invoice-storage";
 
 const filterOptions: Array<"Toutes" | InvoiceStatus> = ["Toutes", "Brouillon", "Envoyée", "Payée"];
@@ -26,17 +23,17 @@ export default function InvoicesPage() {
   const [filter, setFilter] = useState<"Toutes" | InvoiceStatus>("Toutes");
 
   useEffect(() => {
-    setInvoices(getStoredInvoices());
+    void getInvoices().then(setInvoices);
   }, []);
 
   const visibleInvoices = filter === "Toutes" ? invoices : invoices.filter((invoice) => invoice.status === filter);
 
-  const updateStatus = (invoiceNumber: string) => {
+  const updateStatus = async (invoiceNumber: string) => {
     const currentInvoice = invoices.find((invoice) => invoice.number === invoiceNumber);
     if (!currentInvoice) return;
 
     const nextStatus = getNextInvoiceStatus(currentInvoice.status);
-    const updated = updateInvoiceStatus(invoiceNumber, nextStatus);
+    const updated = await updateInvoiceStatusInDatabase(invoiceNumber, nextStatus);
     setInvoices(updated);
   };
 
@@ -45,10 +42,9 @@ export default function InvoicesPage() {
     count: invoices.filter((invoice) => invoice.status === status).length,
   }));
 
-  const removeInvoice = (invoiceNumber: string) => {
-    const updated = deleteInvoice(invoiceNumber);
+  const removeInvoiceFromDatabase = async (invoiceNumber: string) => {
+    const updated = await removeInvoice(invoiceNumber);
     setInvoices(updated);
-    saveInvoices(updated);
   };
 
   return (
@@ -146,7 +142,7 @@ export default function InvoicesPage() {
                 <button
                   className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white p-2 text-[#c13a3a] hover:border-[#f0d2d2]"
                   type="button"
-                  onClick={() => removeInvoice(invoice.number)}
+                  onClick={() => removeInvoiceFromDatabase(invoice.number)}
                   aria-label={`Supprimer ${invoice.number}`}
                   title="Supprimer"
                 >

@@ -60,7 +60,7 @@ async function loadImage(path: string) {
 export async function generateInvoiceDocument(data: InvoicePdfData) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const [header, stamp, footer] = await Promise.all([
-    loadImage("/images/logo_entete_gladiama.png").then((image) => image ?? loadImage("/images/Picture3.png")),
+    loadImage("/images/logo-gladiama.png").then((image) => image ?? loadImage("/images/logo_entete_gladiama.png")).then((image) => image ?? loadImage("/images/Picture3.png")),
     loadImage("/images/cachet_gladiama.png").then((image) => image ?? loadImage("/images/Picture1.png")),
     loadImage("/images/pied_de_page_gladiama.png").then((image) => image ?? loadImage("/images/Picture2.png")),
   ]);

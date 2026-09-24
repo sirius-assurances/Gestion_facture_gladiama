@@ -4,7 +4,8 @@ import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, Bell, ChevronRight, CircleDollarSign, Clock3, FileText, Home as HomeIcon, Menu, Plus, TrendingUp, Users, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getInvoiceDaysUntilDue, getStoredClients, getStoredInvoices, invoiceStatusStyles, isInvoiceOverdue, type ClientRecord, type InvoiceRecord } from "@/lib/invoice-storage";
+import { getClients, getInvoices } from "@/app/actions/billing";
+import { getInvoiceDaysUntilDue, invoiceStatusStyles, isInvoiceOverdue, type ClientRecord, type InvoiceRecord } from "@/lib/invoice-storage";
 
 const formatCfa = (value: number) => `${Math.round(value).toLocaleString("fr-FR")} FCFA`;
 
@@ -13,8 +14,12 @@ export default function Home() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
 
   useEffect(() => {
-    setInvoices(getStoredInvoices());
-    setClients(getStoredClients());
+    async function loadDashboard() {
+      const [nextInvoices, nextClients] = await Promise.all([getInvoices(), getClients()]);
+      setInvoices(nextInvoices);
+      setClients(nextClients);
+    }
+    void loadDashboard();
   }, []);
 
   const metrics = useMemo(() => {
@@ -109,7 +114,6 @@ export default function Home() {
           <Link className="flex items-center gap-3 rounded-xl px-4 py-3 text-white/60 hover:bg-white/10 hover:text-white" href="/invoices"><FileText size={18} /> Factures</Link>
           <Link className="flex items-center gap-3 rounded-xl px-4 py-3 text-white/60 hover:bg-white/10 hover:text-white" href="/clients"><Users size={18} /> Clients</Link>
         </nav>
-        <div className="mt-auto rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/60"><p className="mb-2 uppercase tracking-[0.18em] text-[#e8712b]">Votre entreprise</p><p>GLADIAMA SUARL</p><p>Cité Soleil Dalifort, Dakar</p></div>
       </aside>
 
       <main className="mx-auto max-w-[1440px] px-5 py-5 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10">

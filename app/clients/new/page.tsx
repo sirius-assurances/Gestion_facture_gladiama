@@ -4,19 +4,18 @@ import Link from "next/link";
 import { ArrowLeft, Check, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { getStoredClients, saveClients } from "@/lib/invoice-storage";
+import { createClient } from "@/app/actions/billing";
 import MobileNav from "@/components/layout/mobile-nav";
 
 export default function NewClientPage() {
   const [saved, setSaved] = useState(false);
   const router = useRouter();
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const data = new FormData(event.currentTarget);
     const client = {
-      id: crypto.randomUUID(),
       name: String(data.get("name") ?? "").trim(),
       location: String(data.get("location") ?? "").trim() || "Dakar, Sénégal",
       phone: String(data.get("phone") || ""),
@@ -28,8 +27,7 @@ export default function NewClientPage() {
 
     if (!client.name) return;
 
-    const existing = getStoredClients();
-    saveClients([...existing, client]);
+    await createClient(client);
     setSaved(true);
     window.setTimeout(() => router.push("/clients"), 700);
   }
