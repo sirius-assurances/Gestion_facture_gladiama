@@ -9,6 +9,8 @@ export type ClientRecord = {
   projectName?: string;
   defaultUnitPrice: number;
   hasTva: boolean;
+  createdByEmail?: string;
+  updatedByEmail?: string;
 };
 
 export type InvoiceRecord = {
@@ -29,6 +31,8 @@ export type InvoiceRecord = {
   totalTtc: number;
   status: InvoiceStatus;
   createdAt: string;
+  createdByEmail?: string;
+  updatedByEmail?: string;
 };
 
 export const invoiceStatusOrder: InvoiceStatus[] = ["Brouillon", "Envoyée", "Payée"];

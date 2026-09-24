@@ -79,6 +79,15 @@ export default function InvoiceDetailsPage() {
           </div>
         </div>
 
+        {(invoice.createdByEmail || invoice.updatedByEmail) && (
+          <p className="mb-6 text-xs text-[#9ba1a7]">
+            {invoice.createdByEmail && <>Créée par {invoice.createdByEmail}</>}
+            {invoice.createdByEmail && invoice.updatedByEmail && invoice.updatedByEmail !== invoice.createdByEmail && (
+              <> · Modifiée par {invoice.updatedByEmail}</>
+            )}
+          </p>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
           <section className="rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7] p-5 sm:p-7">
             <div className="grid gap-5 sm:grid-cols-2">

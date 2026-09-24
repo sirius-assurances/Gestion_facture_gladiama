@@ -50,6 +50,14 @@ export default function ClientEditPage() {
         <div className="mb-8">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#e8712b]">Modifier client</p>
           <h1 className="font-[var(--font-space-grotesk)] text-2xl font-bold tracking-tight sm:text-3xl">{client.name}</h1>
+          {(client.createdByEmail || client.updatedByEmail) && (
+            <p className="mt-2 text-xs text-[#9ba1a7]">
+              {client.createdByEmail && <>Créé par {client.createdByEmail}</>}
+              {client.createdByEmail && client.updatedByEmail && client.updatedByEmail !== client.createdByEmail && (
+                <> · Modifié par {client.updatedByEmail}</>
+              )}
+            </p>
+          )}
         </div>
 
         <div className="rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7] p-5 sm:p-8">

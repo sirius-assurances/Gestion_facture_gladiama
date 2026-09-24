@@ -90,6 +90,8 @@ function mapClient(client: Awaited<ReturnType<typeof prisma.client.findMany>>[nu
     projectName: client.projectName ?? undefined,
     defaultUnitPrice: Number(client.defaultUnitPrice),
     hasTva: client.hasTva,
+    createdByEmail: client.createdByEmail ?? undefined,
+    updatedByEmail: client.updatedByEmail ?? undefined,
   };
 }
 
@@ -113,6 +115,8 @@ function mapInvoice(invoice: Awaited<ReturnType<typeof prisma.invoice.findMany<{
     totalTtc: Number(invoice.totalTtc),
     status: statusFromDb[invoice.status],
     createdAt: invoice.createdAt.toISOString(),
+    createdByEmail: invoice.createdByEmail ?? undefined,
+    updatedByEmail: invoice.updatedByEmail ?? undefined,
   };
 }
 
@@ -186,16 +190,24 @@ export async function getInvoices() {
 }
 
 export async function createClient(input: Omit<ClientRecord, "id">) {
-  await requireUser();
+  const user = await requireUser();
   const data = clientInputSchema.parse(input);
   const client = await prisma.client.create({
-    data: { ...data, defaultUnitPrice: amount(data.defaultUnitPrice), phone: data.phone || null, email: data.email || null, projectName: data.projectName || null },
+    data: {
+      ...data,
+      defaultUnitPrice: amount(data.defaultUnitPrice),
+      phone: data.phone || null,
+      email: data.email || null,
+      projectName: data.projectName || null,
+      createdByEmail: user.email,
+      updatedByEmail: user.email,
+    },
   });
   return mapClient(client);
 }
 
 export async function updateClient(client: ClientRecord) {
-  await requireUser();
+  const user = await requireUser();
   const data = clientRecordSchema.parse(client);
   const updated = await prisma.client.update({
     where: { id: data.id },
@@ -207,6 +219,7 @@ export async function updateClient(client: ClientRecord) {
       projectName: data.projectName || null,
       defaultUnitPrice: amount(data.defaultUnitPrice),
       hasTva: data.hasTva,
+      updatedByEmail: user.email,
     },
   });
   return mapClient(updated);
@@ -220,7 +233,7 @@ export async function removeClient(clientId: string) {
 }
 
 export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" | "date" | "createdAt">) {
-  await requireUser();
+  const user = await requireUser();
   const data = invoiceInputSchema.parse(input);
   const client = data.clientId
     ? await prisma.client.findUnique({ where: { id: data.clientId } })
@@ -241,6 +254,8 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
         totalTva: amount(data.totalTva),
         totalTtc: amount(data.totalTtc),
         status: statusToDb[data.status ?? "Brouillon"],
+        createdByEmail: user.email,
+        updatedByEmail: user.email,
         items: { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
       },
     });
@@ -249,7 +264,7 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
 }
 
 export async function updateInvoice(invoice: InvoiceRecord) {
-  await requireUser();
+  const user = await requireUser();
   const data = invoiceRecordSchema.parse(invoice);
   const client = data.clientId ? await prisma.client.findUnique({ where: { id: data.clientId } }) : await prisma.client.findFirst({ where: { name: data.client } });
   if (!client) throw new Error("Client introuvable.");
@@ -267,6 +282,7 @@ export async function updateInvoice(invoice: InvoiceRecord) {
       totalTva: amount(data.totalTva),
       totalTtc: amount(data.totalTtc),
       status: statusToDb[data.status],
+      updatedByEmail: user.email,
       items: existing.items[0]
         ? { update: { where: { id: existing.items[0].id }, data: { designation: data.designation, quantity: amount(data.quantity, 3), unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } } }
         : { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
@@ -276,10 +292,10 @@ export async function updateInvoice(invoice: InvoiceRecord) {
 }
 
 export async function updateInvoiceStatus(invoiceNumber: string, status: InvoiceStatus) {
-  await requireUser();
+  const user = await requireUser();
   const number = z.string().min(1).parse(invoiceNumber);
   const nextStatus = invoiceStatusSchema.parse(status);
-  await prisma.invoice.update({ where: { invoiceNumber: number }, data: { status: statusToDb[nextStatus] } });
+  await prisma.invoice.update({ where: { invoiceNumber: number }, data: { status: statusToDb[nextStatus], updatedByEmail: user.email } });
   return getInvoices();
 }
 

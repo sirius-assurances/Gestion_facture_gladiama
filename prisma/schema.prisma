@@ -21,6 +21,9 @@ model Client {
   defaultUnitPrice Decimal   @default(600) @db.Decimal(15, 2)
   hasTva           Boolean   @default(false)
   createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdByEmail   String?
+  updatedByEmail   String?
   invoices         Invoice[]
 
   @@schema("facturation")
@@ -42,6 +45,9 @@ model Invoice {
   totalTtc      Decimal       @default(0) @db.Decimal(15, 2)
   status        InvoiceStatus @default(DRAFT)
   createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  createdByEmail String?
+  updatedByEmail String?
   client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   items         InvoiceItem[]
 
