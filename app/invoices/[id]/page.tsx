@@ -13,8 +13,7 @@ import {
   invoiceStatusOrder,
   type InvoiceRecord,
 } from "@/lib/invoice-storage";
-
-const formatCfa = (value: number) => `${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} FCFA`;
+import { formatCfa } from "@/lib/format";
 
 export default function InvoiceDetailsPage() {
   const params = useParams();

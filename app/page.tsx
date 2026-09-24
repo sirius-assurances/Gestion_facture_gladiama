@@ -6,8 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
 import { getClients, getInvoices } from "@/app/actions/billing";
 import { getInvoiceDaysUntilDue, invoiceStatusStyles, isInvoiceOverdue, type ClientRecord, type InvoiceRecord } from "@/lib/invoice-storage";
-
-const formatCfa = (value: number) => `${Math.round(value).toLocaleString("fr-FR")} FCFA`;
+import { formatCfa } from "@/lib/format";
 
 export default function Home() {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);

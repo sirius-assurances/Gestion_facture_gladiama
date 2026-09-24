@@ -5,11 +5,9 @@ import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-
 import { useSearchParams } from "next/navigation";
 import { createInvoice, getClients, getInvoices } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice-storage";
+import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
-
-const formatCfa = (value: number) => `${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} FCFA`;
-const formatDate = (value: string) => new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(`${value}T12:00:00`)).replace(/(^|\s)([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
 
 export default function InvoiceForm() {
   const searchParams = useSearchParams();
@@ -67,8 +65,8 @@ export default function InvoiceForm() {
       projectName: client?.projectName,
       marketNumber: "Marché N°TA3/1087/AGR",
       contractNumber: "Contrat T0032/24",
-      periodStart: formatDate(periodStart),
-      periodEnd: formatDate(periodEnd),
+      periodStart: formatFrenchDate(periodStart),
+      periodEnd: formatFrenchDate(periodEnd),
       designation,
       quantity,
       unitPrice,

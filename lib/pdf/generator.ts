@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { numberToFrenchWords } from "@/lib/pdf/number-to-words";
+import { formatCfa, formatFrenchDate, formatGroupedNumber } from "@/lib/format";
 
 export type InvoicePdfData = {
   invoiceNumber: string;
@@ -26,32 +27,31 @@ const colors = {
   yellow: [255, 215, 0] as [number, number, number],
 };
 
-function formatFcfa(value: number): string {
-  return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-}
-
-const formatCfa = (value: number) => `${formatFcfa(value)} FCFA`;
-
 function getCountry(location: string): string {
   return (location.includes(",") ? location.split(",").at(-1) ?? location : location).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function formatFrenchDate(value: string | Date): string {
-  const formatted = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(value));
-  return formatted.replace(/(^|\s)([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
-}
+// Invoice header/stamp/footer images are static assets, so their data-URL
+// conversion is cached across PDF generations instead of being refetched
+// and re-encoded on every invoice.
+const imageCache = new Map<string, string>();
 
-async function loadImage(path: string) {
+async function loadImage(path: string): Promise<string | null> {
+  const cached = imageCache.get(path);
+  if (cached) return cached;
+
   try {
     const response = await fetch(path);
     if (!response.ok) return null;
     const blob = await response.blob();
-    return await new Promise<string>((resolve, reject) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+    imageCache.set(path, dataUrl);
+    return dataUrl;
   } catch {
     return null;
   }
@@ -158,11 +158,11 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
   if (data.hasTva) {
     doc.text(data.designation, 23, dataY + 10);
     doc.text(formatCfa(data.unitPrice), (columns[1] + columns[2]) / 2, dataY + 10, { align: "center" });
-    doc.text(`${formatFcfa(data.quantity)} m³`, (columns[2] + columns[3]) / 2, dataY + 10, { align: "center" });
+    doc.text(`${formatGroupedNumber(data.quantity)} m³`, (columns[2] + columns[3]) / 2, dataY + 10, { align: "center" });
     doc.text(formatCfa(data.totalHt), 187, dataY + 10, { align: "right" });
   } else {
     doc.text(data.designation, 23, dataY + 10);
-    doc.text(`${formatFcfa(data.quantity)} m³`, (columns[1] + columns[2]) / 2, dataY + 10, { align: "center" });
+    doc.text(`${formatGroupedNumber(data.quantity)} m³`, (columns[1] + columns[2]) / 2, dataY + 10, { align: "center" });
     doc.text(formatCfa(data.unitPrice), (columns[2] + columns[3]) / 2, dataY + 10, { align: "center" });
     doc.text(formatCfa(data.totalHt), 187, dataY + 10, { align: "right" });
   }
@@ -190,7 +190,7 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
   const amountWords = numberToFrenchWords(data.totalTtc);
   const amountPrefix = "« Soit Un Total De ";
   const amountWordsText = `${amountWords} Francs CFA `;
-  const amountDigitsText = `${formatFcfa(data.totalTtc)} FCFA`;
+  const amountDigitsText = `${formatGroupedNumber(data.totalTtc)} FCFA`;
   const amountSuffix = "). »";
   const amountLine = `${amountPrefix}${amountWordsText}(${amountDigitsText}${amountSuffix}`;
   const amountLines = doc.splitTextToSize(amountLine, 170);

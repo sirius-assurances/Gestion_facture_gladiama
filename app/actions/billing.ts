@@ -1,7 +1,9 @@
 "use server";
 
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatFrenchDate } from "@/lib/format";
 import {
   defaultClients,
   defaultInvoices,
@@ -18,6 +20,47 @@ const statusToDb: Record<InvoiceStatus, "DRAFT" | "SENT" | "PAID"> = {
 const statusFromDb = { DRAFT: "Brouillon", SENT: "Envoyée", PAID: "Payée" } as const;
 let seedPromise: Promise<void> | null = null;
 
+const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide.");
+const money = z.number().finite().min(0).max(1_000_000_000_000);
+
+const clientInputSchema = z.object({
+  name: z.string().trim().min(1, "Nom requis.").max(200),
+  location: z.string().trim().min(1, "Localisation requise.").max(200),
+  phone: z.string().trim().max(30).optional(),
+  email: z.string().trim().email("Email invalide.").max(200).optional().or(z.literal("")),
+  projectName: z.string().trim().max(300).optional(),
+  defaultUnitPrice: money,
+  hasTva: z.boolean(),
+});
+
+const clientRecordSchema = clientInputSchema.extend({ id: z.string().min(1) });
+
+const invoiceStatusSchema = z.enum(["Brouillon", "Envoyée", "Payée"]);
+
+const invoiceInputSchema = z.object({
+  client: z.string().trim().min(1, "Client requis."),
+  clientId: z.string().min(1).optional(),
+  periodStart: dateInput,
+  periodEnd: dateInput,
+  dueDate: dateInput.optional(),
+  designation: z.string().trim().min(1, "Désignation requise.").max(300),
+  quantity: z.number().finite().gt(0).max(1_000_000_000),
+  unitPrice: money,
+  hasTva: z.boolean(),
+  totalHt: money,
+  totalTva: money,
+  totalTtc: money,
+  status: invoiceStatusSchema.optional(),
+});
+
+const invoiceRecordSchema = invoiceInputSchema.extend({
+  id: z.string().min(1),
+  number: z.string().min(1),
+  date: z.string().min(1),
+  createdAt: z.string().min(1),
+  status: invoiceStatusSchema,
+});
+
 async function requireUser() {
   const supabase = await createSupabaseServerClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -31,12 +74,6 @@ function dateFromInput(value: string) {
 
 function dateToInput(value: Date) {
   return value.toISOString().slice(0, 10);
-}
-
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
-    .format(value)
-    .replace(/(^|\s)([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
 }
 
 function amount(value: number, decimals = 2) {
@@ -63,7 +100,7 @@ function mapInvoice(invoice: Awaited<ReturnType<typeof prisma.invoice.findMany<{
     number: invoice.invoiceNumber,
     client: invoice.client.name,
     clientId: invoice.clientId,
-    date: formatDate(invoice.invoiceDate),
+    date: formatFrenchDate(invoice.invoiceDate),
     periodStart: dateToInput(invoice.periodStart),
     periodEnd: dateToInput(invoice.periodEnd),
     dueDate: dateToInput(invoice.dueDate),
@@ -150,22 +187,26 @@ export async function getInvoices() {
 
 export async function createClient(input: Omit<ClientRecord, "id">) {
   await requireUser();
-  const client = await prisma.client.create({ data: input });
+  const data = clientInputSchema.parse(input);
+  const client = await prisma.client.create({
+    data: { ...data, defaultUnitPrice: amount(data.defaultUnitPrice), phone: data.phone || null, email: data.email || null, projectName: data.projectName || null },
+  });
   return mapClient(client);
 }
 
 export async function updateClient(client: ClientRecord) {
   await requireUser();
+  const data = clientRecordSchema.parse(client);
   const updated = await prisma.client.update({
-    where: { id: client.id },
+    where: { id: data.id },
     data: {
-      name: client.name,
-      location: client.location,
-      phone: client.phone || null,
-      email: client.email || null,
-      projectName: client.projectName || null,
-      defaultUnitPrice: amount(client.defaultUnitPrice),
-      hasTva: client.hasTva,
+      name: data.name,
+      location: data.location,
+      phone: data.phone || null,
+      email: data.email || null,
+      projectName: data.projectName || null,
+      defaultUnitPrice: amount(data.defaultUnitPrice),
+      hasTva: data.hasTva,
     },
   });
   return mapClient(updated);
@@ -173,34 +214,34 @@ export async function updateClient(client: ClientRecord) {
 
 export async function removeClient(clientId: string) {
   await requireUser();
-  await prisma.client.delete({ where: { id: clientId } });
+  const id = z.string().min(1).parse(clientId);
+  await prisma.client.delete({ where: { id } });
   return getClients();
 }
 
 export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" | "date" | "createdAt">) {
   await requireUser();
-  const client = input.clientId
-    ? await prisma.client.findUnique({ where: { id: input.clientId } })
-    : await prisma.client.findFirst({ where: { name: input.client } });
+  const data = invoiceInputSchema.parse(input);
+  const client = data.clientId
+    ? await prisma.client.findUnique({ where: { id: data.clientId } })
+    : await prisma.client.findFirst({ where: { name: data.client } });
   if (!client) throw new Error("Client introuvable.");
 
   await prisma.$transaction(async (transaction) => {
-    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(742913);`;
-    const invoices = await transaction.invoice.findMany({ select: { invoiceNumber: true } });
-    const highest = invoices.reduce((max, invoice) => Math.max(max, Number.parseInt(invoice.invoiceNumber.replace(/\D+/g, ""), 10) || 0), 0);
+    const [{ nextval }] = await transaction.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('facturation.invoice_number_seq') AS nextval`;
     await transaction.invoice.create({
       data: {
         clientId: client.id,
-        invoiceNumber: `N°${highest + 1}`,
-        periodStart: dateFromInput(input.periodStart),
-        periodEnd: dateFromInput(input.periodEnd),
-        dueDate: dateFromInput(input.dueDate ?? input.periodEnd),
-        hasTva: input.hasTva,
-        totalHt: amount(input.totalHt),
-        totalTva: amount(input.totalTva),
-        totalTtc: amount(input.totalTtc),
-        status: statusToDb[input.status ?? "Brouillon"],
-        items: { create: { designation: input.designation, quantity: amount(input.quantity, 3), unit: "m³", unitPrice: amount(input.unitPrice), total: amount(input.totalHt) } },
+        invoiceNumber: `N°${nextval}`,
+        periodStart: dateFromInput(data.periodStart),
+        periodEnd: dateFromInput(data.periodEnd),
+        dueDate: dateFromInput(data.dueDate ?? data.periodEnd),
+        hasTva: data.hasTva,
+        totalHt: amount(data.totalHt),
+        totalTva: amount(data.totalTva),
+        totalTtc: amount(data.totalTtc),
+        status: statusToDb[data.status ?? "Brouillon"],
+        items: { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
       },
     });
   });
@@ -209,25 +250,26 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
 
 export async function updateInvoice(invoice: InvoiceRecord) {
   await requireUser();
-  const client = invoice.clientId ? await prisma.client.findUnique({ where: { id: invoice.clientId } }) : await prisma.client.findFirst({ where: { name: invoice.client } });
+  const data = invoiceRecordSchema.parse(invoice);
+  const client = data.clientId ? await prisma.client.findUnique({ where: { id: data.clientId } }) : await prisma.client.findFirst({ where: { name: data.client } });
   if (!client) throw new Error("Client introuvable.");
-  const existing = await prisma.invoice.findUnique({ where: { id: invoice.id }, include: { items: true } });
+  const existing = await prisma.invoice.findUnique({ where: { id: data.id }, include: { items: true } });
   if (!existing) throw new Error("Facture introuvable.");
   await prisma.invoice.update({
-    where: { id: invoice.id },
+    where: { id: data.id },
     data: {
       clientId: client.id,
-      periodStart: dateFromInput(invoice.periodStart),
-      periodEnd: dateFromInput(invoice.periodEnd),
-      dueDate: dateFromInput(invoice.dueDate ?? invoice.periodEnd),
-      hasTva: invoice.hasTva,
-      totalHt: amount(invoice.totalHt),
-      totalTva: amount(invoice.totalTva),
-      totalTtc: amount(invoice.totalTtc),
-      status: statusToDb[invoice.status],
+      periodStart: dateFromInput(data.periodStart),
+      periodEnd: dateFromInput(data.periodEnd),
+      dueDate: dateFromInput(data.dueDate ?? data.periodEnd),
+      hasTva: data.hasTva,
+      totalHt: amount(data.totalHt),
+      totalTva: amount(data.totalTva),
+      totalTtc: amount(data.totalTtc),
+      status: statusToDb[data.status],
       items: existing.items[0]
-        ? { update: { where: { id: existing.items[0].id }, data: { designation: invoice.designation, quantity: amount(invoice.quantity, 3), unitPrice: amount(invoice.unitPrice), total: amount(invoice.totalHt) } } }
-        : { create: { designation: invoice.designation, quantity: amount(invoice.quantity, 3), unit: "m³", unitPrice: amount(invoice.unitPrice), total: amount(invoice.totalHt) } },
+        ? { update: { where: { id: existing.items[0].id }, data: { designation: data.designation, quantity: amount(data.quantity, 3), unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } } }
+        : { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
     },
   });
   return getInvoices();
@@ -235,12 +277,15 @@ export async function updateInvoice(invoice: InvoiceRecord) {
 
 export async function updateInvoiceStatus(invoiceNumber: string, status: InvoiceStatus) {
   await requireUser();
-  await prisma.invoice.update({ where: { invoiceNumber }, data: { status: statusToDb[status] } });
+  const number = z.string().min(1).parse(invoiceNumber);
+  const nextStatus = invoiceStatusSchema.parse(status);
+  await prisma.invoice.update({ where: { invoiceNumber: number }, data: { status: statusToDb[nextStatus] } });
   return getInvoices();
 }
 
 export async function removeInvoice(invoiceNumber: string) {
   await requireUser();
-  await prisma.invoice.delete({ where: { invoiceNumber } });
+  const number = z.string().min(1).parse(invoiceNumber);
+  await prisma.invoice.delete({ where: { invoiceNumber: number } });
   return getInvoices();
 }
