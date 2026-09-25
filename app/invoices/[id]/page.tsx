@@ -25,8 +25,6 @@ export default function InvoiceDetailsPage() {
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [pdfStatus, setPdfStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
 
   useEffect(() => {
@@ -37,14 +35,6 @@ export default function InvoiceDetailsPage() {
     }
     void loadInvoice();
   }, [params.id]);
-
-  // Revoke the object URL backing the inline preview so we don't leak
-  // memory when the preview is closed or the page is left.
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
 
   const totals = useMemo(() => {
     if (!invoice) return { totalHt: 0, totalTva: 0, totalTtc: 0 };
@@ -112,24 +102,29 @@ export default function InvoiceDetailsPage() {
     }
   };
 
+  // Safari (desktop and iOS) only treats window.open() as user-initiated —
+  // and skips its popup blocker — when it's called synchronously inside the
+  // click handler. Any `await` beforehand (fetching the signed URL,
+  // generating the PDF) loses that association and the tab gets silently
+  // blocked. Opening a blank tab immediately, then pointing it at the real
+  // URL once it's ready, keeps it inside the user-gesture window.
+  // Inline iframe/embed PDF preview isn't used here because iOS Safari does
+  // not render embedded PDFs at all (a platform limitation, not something
+  // fixable in CSS/JS) — a new tab uses the browser's own PDF viewer, which
+  // every browser, including iOS Safari, supports.
   const handleViewStoredPdf = async () => {
+    const tab = window.open("", "_blank");
     const url = await getInvoicePdfUrl(invoice.id);
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    if (!tab) return;
+    if (url) tab.location.href = url;
+    else tab.close();
   };
 
-  const handleTogglePreview = async () => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-      return;
-    }
-    setPreviewLoading(true);
-    try {
-      const doc = await generateInvoiceDocument(getPdfData());
-      setPreviewUrl(URL.createObjectURL(doc.output("blob")));
-    } finally {
-      setPreviewLoading(false);
-    }
+  const handleViewPdf = async () => {
+    const tab = window.open("", "_blank");
+    const doc = await generateInvoiceDocument(getPdfData());
+    if (!tab) return;
+    tab.location.href = URL.createObjectURL(doc.output("blob"));
   };
 
   const handleShare = async (channel: "whatsapp" | "email") => {
@@ -374,12 +369,11 @@ export default function InvoiceDetailsPage() {
             )}
 
             <button
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
               type="button"
-              disabled={previewLoading}
-              onClick={handleTogglePreview}
+              onClick={handleViewPdf}
             >
-              <Eye size={17} /> {previewLoading ? "Génération..." : previewUrl ? "Masquer l'aperçu" : "Visualiser la facture"}
+              <Eye size={17} /> Visualiser la facture
             </button>
 
             <button
@@ -401,18 +395,6 @@ export default function InvoiceDetailsPage() {
             {shareNotice && <p className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-center text-xs text-white/80">{shareNotice}</p>}
           </aside>
         </div>
-
-        {previewUrl && (
-          <section className="mt-6 overflow-hidden rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7]">
-            <div className="flex items-center justify-between border-b border-[#e4e3dd] px-5 py-3">
-              <p className="text-sm font-semibold text-[#172238]">Aperçu de la facture</p>
-              <button className="text-xs font-semibold text-[#6f7885] hover:text-[#172238]" type="button" onClick={handleTogglePreview}>
-                Fermer
-              </button>
-            </div>
-            <iframe className="h-[80dvh] w-full" src={previewUrl} title={`Aperçu facture ${invoice.number}`} />
-          </section>
-        )}
       </div>
       <MobileNav />
     </main>
