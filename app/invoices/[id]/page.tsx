@@ -112,6 +112,12 @@ export default function InvoiceDetailsPage() {
   // not render embedded PDFs at all (a platform limitation, not something
   // fixable in CSS/JS) — a new tab uses the browser's own PDF viewer, which
   // every browser, including iOS Safari, supports.
+  //
+  // The tab is also never pointed at a local blob: URL — Safari can't
+  // resolve a blob created in the opener's context from a different
+  // browsing context (the new tab), which renders as a blank white page.
+  // Chrome tolerates this; Safari doesn't. Uploading to Storage first and
+  // navigating to the real https:// signed URL sidesteps that entirely.
   const handleViewStoredPdf = async () => {
     const tab = window.open("", "_blank");
     const url = await getInvoicePdfUrl(invoice.id);
@@ -122,9 +128,19 @@ export default function InvoiceDetailsPage() {
 
   const handleViewPdf = async () => {
     const tab = window.open("", "_blank");
-    const doc = await generateInvoiceDocument(getPdfData());
-    if (!tab) return;
-    tab.location.href = URL.createObjectURL(doc.output("blob"));
+    try {
+      const doc = await generateInvoiceDocument(getPdfData());
+      const dataUri = doc.output("datauristring");
+      const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
+      await saveInvoicePdf(invoice.id, base64);
+      setInvoice((current) => (current ? { ...current, hasStoredPdf: true } : current));
+      const url = await getInvoicePdfUrl(invoice.id);
+      if (!tab) return;
+      if (url) tab.location.href = url;
+      else tab.close();
+    } catch {
+      tab?.close();
+    }
   };
 
   const handleShare = async (channel: "whatsapp" | "email") => {
