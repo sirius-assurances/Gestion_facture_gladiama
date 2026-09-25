@@ -6,7 +6,7 @@ import MobileNav from "@/components/layout/mobile-nav";
 
 export default function NewInvoicePage() {
   return (
-    <main className="min-h-screen bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10 lg:pb-10">
+    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10 lg:pb-10">
       <div className="mx-auto max-w-5xl">
         <Link className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-[#6f7885] hover:text-[#172238]" href="/">
           <ArrowLeft size={17} /> Retour au tableau de bord

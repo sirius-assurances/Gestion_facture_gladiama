@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
 import SignOutButton from "@/components/layout/sign-out-button";
 import "./globals.css";
@@ -20,6 +20,16 @@ export const metadata: Metadata = {
     icon: "/images/logo-gladiama.png",
     apple: "/images/logo-gladiama.png",
   },
+};
+
+// viewport-fit=cover lets iOS Safari's safe-area-inset-* env() variables
+// resolve to real values (notch / home-indicator), so the fixed bottom nav
+// and floating action button can pad around them instead of sitting flush
+// against system UI.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

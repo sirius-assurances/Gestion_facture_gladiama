@@ -77,7 +77,7 @@ export default function Home() {
   const recentInvoices = metrics.recentInvoices;
 
   return (
-    <div className="min-h-screen bg-[#f5f4f0] pb-24 lg:pb-0">
+    <div className="min-h-dvh bg-[#f5f4f0] pb-24 lg:pb-0">
       <aside className="fixed inset-y-0 left-0 hidden w-[248px] flex-col bg-[#172238] px-7 py-8 text-white lg:flex">
         <div className="mb-16 flex items-center gap-3">
           <img alt="GLADIAMA SUARL" className="h-auto w-40 object-contain" src="/images/logo-gladiama.png" />
@@ -190,7 +190,7 @@ export default function Home() {
 
         <Link className="mt-4 flex items-center justify-center gap-1 text-sm font-semibold text-[#e8712b] sm:hidden" href="/invoices">Voir toutes les factures <ChevronRight size={16} /></Link>
       </main>
-      <Link aria-label="Créer une nouvelle facture" className="fixed bottom-20 right-5 grid h-14 w-14 place-items-center rounded-full bg-[#e8712b] text-white shadow-[0_12px_30px_rgba(232,113,43,0.35)] transition-transform hover:scale-105 lg:bottom-10 lg:right-10" href="/invoices/new"><Plus size={25} /></Link>
+      <Link aria-label="Créer une nouvelle facture" className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] grid h-14 w-14 place-items-center rounded-full bg-[#e8712b] text-white shadow-[0_12px_30px_rgba(232,113,43,0.35)] transition-transform hover:scale-105 lg:bottom-10 lg:right-10" href="/invoices/new"><Plus size={25} /></Link>
       <MobileNav />
     </div>
   );

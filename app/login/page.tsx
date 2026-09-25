@@ -31,7 +31,7 @@ function LoginForm() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f5f4f0] px-5 py-10">
+    <main className="grid min-h-dvh place-items-center bg-[#f5f4f0] px-5 py-10">
       <section className="w-full max-w-md rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7] p-6 shadow-[0_18px_45px_rgba(23,34,56,0.08)] sm:p-8">
         <div className="mb-8">
           <div className="mb-6 flex items-center">
@@ -62,5 +62,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[#f5f4f0] text-sm text-[#6f7885]">Chargement...</main>}><LoginForm /></Suspense>;
+  return <Suspense fallback={<main className="grid min-h-dvh place-items-center bg-[#f5f4f0] text-sm text-[#6f7885]">Chargement...</main>}><LoginForm /></Suspense>;
 }
