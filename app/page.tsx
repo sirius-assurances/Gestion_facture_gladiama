@@ -2,63 +2,38 @@
 
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, Bell, ChevronRight, CircleDollarSign, Clock3, FileText, Home as HomeIcon, Menu, Plus, TrendingUp, Users, Wallet } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getClients, getInvoices } from "@/app/actions/billing";
-import { getInvoiceDaysUntilDue, invoiceStatusStyles, isInvoiceOverdue, type ClientRecord, type InvoiceRecord } from "@/lib/invoice-storage";
+import { getDashboardMetrics, type DashboardMetrics } from "@/app/actions/billing";
+import { invoiceStatusStyles } from "@/lib/invoice-storage";
 import { formatCfa } from "@/lib/format";
 
+const emptyMetrics: DashboardMetrics = {
+  totalRevenue: 0,
+  paidRevenue: 0,
+  sentRevenue: 0,
+  draftRevenue: 0,
+  pendingRevenue: 0,
+  paidCount: 0,
+  pendingCount: 0,
+  totalCount: 0,
+  paymentRate: 0,
+  monthInvoiceCount: 0,
+  monthRevenue: 0,
+  clientsCount: 0,
+  overdueCount: 0,
+  overdueRevenue: 0,
+  overdueInvoices: [],
+  dueSoonCount: 0,
+  recentInvoices: [],
+};
+
 export default function Home() {
-  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
-  const [clients, setClients] = useState<ClientRecord[]>([]);
+  const [metrics, setMetrics] = useState<DashboardMetrics>(emptyMetrics);
 
   useEffect(() => {
-    async function loadDashboard() {
-      const [nextInvoices, nextClients] = await Promise.all([getInvoices(), getClients()]);
-      setInvoices(nextInvoices);
-      setClients(nextClients);
-    }
-    void loadDashboard();
+    void getDashboardMetrics().then(setMetrics);
   }, []);
-
-  const metrics = useMemo(() => {
-    const now = new Date();
-    const currentMonthInvoices = invoices.filter((invoice) => {
-      const date = new Date(invoice.createdAt);
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    });
-
-    const totalRevenue = invoices.reduce((sum, invoice) => sum + invoice.totalTtc, 0);
-    const paidRevenue = invoices.filter((invoice) => invoice.status === "Payée").reduce((sum, invoice) => sum + invoice.totalTtc, 0);
-    const sentRevenue = invoices.filter((invoice) => invoice.status === "Envoyée").reduce((sum, invoice) => sum + invoice.totalTtc, 0);
-    const draftRevenue = invoices.filter((invoice) => invoice.status === "Brouillon").reduce((sum, invoice) => sum + invoice.totalTtc, 0);
-    const paidCount = invoices.filter((invoice) => invoice.status === "Payée").length;
-    const totalCount = invoices.length;
-    const paymentRate = totalCount ? Math.round((paidCount / totalCount) * 100) : 0;
-    const overdueInvoices = invoices.filter((invoice) => isInvoiceOverdue(invoice));
-    const dueSoonInvoices = invoices.filter((invoice) => {
-      const daysUntilDue = getInvoiceDaysUntilDue(invoice);
-      return invoice.status !== "Payée" && daysUntilDue >= 0 && daysUntilDue <= 7;
-    });
-    const overdueRevenue = overdueInvoices.reduce((sum, invoice) => sum + invoice.totalTtc, 0);
-    const pendingRevenue = sentRevenue + draftRevenue;
-
-    return {
-      totalRevenue,
-      paidRevenue,
-      sentRevenue,
-      draftRevenue,
-      monthInvoices: currentMonthInvoices,
-      paymentRate,
-      clientsCount: clients.length,
-      totalCount,
-      paidCount,
-      overdueInvoices,
-      dueSoonInvoices,
-      overdueRevenue,
-      pendingRevenue,
-    };
-  }, [clients.length, invoices]);
 
   const summaryCards = [
     {
@@ -72,8 +47,8 @@ export default function Home() {
     },
     {
       label: "Factures du mois",
-      value: String(metrics.monthInvoices.length),
-      helper: `${metrics.monthInvoices.reduce((sum, invoice) => sum + invoice.totalTtc, 0) > 0 ? formatCfa(metrics.monthInvoices.reduce((sum, invoice) => sum + invoice.totalTtc, 0)) : "Aucune facture"}`,
+      value: String(metrics.monthInvoiceCount),
+      helper: metrics.monthRevenue > 0 ? formatCfa(metrics.monthRevenue) : "Aucune facture",
       accent: "border border-[#e4e3dd] bg-[#fbfaf7] text-[#172238]",
       icon: FileText,
       trend: `${metrics.paymentRate}% payées`,
@@ -82,7 +57,7 @@ export default function Home() {
     {
       label: "À recevoir",
       value: formatCfa(metrics.pendingRevenue),
-      helper: `${invoices.filter((invoice) => invoice.status !== "Payée").length} en attente`,
+      helper: `${metrics.pendingCount} en attente`,
       accent: "border border-[#e4e3dd] bg-[#fbfaf7] text-[#172238]",
       icon: ArrowUpRight,
       trend: `${metrics.sentRevenue > 0 ? "encours" : "à l’étude"}`,
@@ -99,7 +74,7 @@ export default function Home() {
     },
   ];
 
-  const recentInvoices = invoices.slice(0, 3);
+  const recentInvoices = metrics.recentInvoices;
 
   return (
     <div className="min-h-screen bg-[#f5f4f0] pb-24 lg:pb-0">
@@ -137,23 +112,23 @@ export default function Home() {
         </section>
 
         <section className="mb-10 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className={`rounded-2xl border p-5 sm:p-6 ${metrics.overdueInvoices.length ? "border-[#f1caca] bg-[#fff8f7]" : "border-[#bfe7d2] bg-[#f5fcf8]"}`}>
+          <div className={`rounded-2xl border p-5 sm:p-6 ${metrics.overdueCount ? "border-[#f1caca] bg-[#fff8f7]" : "border-[#bfe7d2] bg-[#f5fcf8]"}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${metrics.overdueInvoices.length ? "bg-[#c13a3a]/10 text-[#c13a3a]" : "bg-[#21744d]/10 text-[#21744d]"}`}>
-                  {metrics.overdueInvoices.length ? <AlertTriangle size={19} /> : <CircleDollarSign size={19} />}
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${metrics.overdueCount ? "bg-[#c13a3a]/10 text-[#c13a3a]" : "bg-[#21744d]/10 text-[#21744d]"}`}>
+                  {metrics.overdueCount ? <AlertTriangle size={19} /> : <CircleDollarSign size={19} />}
                 </span>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9ba1a7]">Surveillance des encaissements</p>
-                  <h2 className="mt-1 font-[var(--font-space-grotesk)] text-xl font-bold">{metrics.overdueInvoices.length ? `${metrics.overdueInvoices.length} paiement(s) en retard` : "Aucun paiement en retard"}</h2>
-                  <p className="mt-2 text-sm text-[#6f7885]">{metrics.overdueInvoices.length ? `${formatCfa(metrics.overdueRevenue)} nécessitent votre attention.` : "Votre portefeuille client est à jour pour le moment."}</p>
+                  <h2 className="mt-1 font-[var(--font-space-grotesk)] text-xl font-bold">{metrics.overdueCount ? `${metrics.overdueCount} paiement(s) en retard` : "Aucun paiement en retard"}</h2>
+                  <p className="mt-2 text-sm text-[#6f7885]">{metrics.overdueCount ? `${formatCfa(metrics.overdueRevenue)} nécessitent votre attention.` : "Votre portefeuille client est à jour pour le moment."}</p>
                 </div>
               </div>
-              <span className={`hidden rounded-full px-3 py-1 text-xs font-bold sm:inline-flex ${metrics.overdueInvoices.length ? "bg-[#c13a3a]/10 text-[#c13a3a]" : "bg-[#21744d]/10 text-[#21744d]"}`}>{metrics.overdueInvoices.length ? "Action requise" : "À jour"}</span>
+              <span className={`hidden rounded-full px-3 py-1 text-xs font-bold sm:inline-flex ${metrics.overdueCount ? "bg-[#c13a3a]/10 text-[#c13a3a]" : "bg-[#21744d]/10 text-[#21744d]"}`}>{metrics.overdueCount ? "Action requise" : "À jour"}</span>
             </div>
-            {metrics.overdueInvoices.length > 0 && (
+            {metrics.overdueCount > 0 && (
               <div className="mt-5 space-y-2 border-t border-[#f1caca] pt-4">
-                {metrics.overdueInvoices.slice(0, 2).map((invoice) => (
+                {metrics.overdueInvoices.map((invoice) => (
                   <Link className="flex items-center justify-between gap-3 rounded-xl bg-white/70 px-3 py-3 text-sm transition hover:bg-white" href={`/invoices/${invoice.id}`} key={invoice.id}>
                     <span><span className="font-semibold">{invoice.number}</span><span className="ml-2 text-[#6f7885]">{invoice.client}</span></span>
                     <span className="shrink-0 font-semibold text-[#c13a3a]">{formatCfa(invoice.totalTtc)}</span>
@@ -168,8 +143,8 @@ export default function Home() {
               <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Prochaines échéances</p><h2 className="mt-1 font-[var(--font-space-grotesk)] text-xl font-bold">À surveiller</h2></div>
               <Clock3 className="text-[#e8712b]" size={21} />
             </div>
-            <div className="mt-5 flex items-end justify-between"><p className="font-[var(--font-space-grotesk)] text-3xl font-bold">{metrics.dueSoonInvoices.length}</p><p className="text-right text-xs text-white/50">dans les<br />7 prochains jours</p></div>
-            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#e8712b]" style={{ width: `${Math.min(100, metrics.dueSoonInvoices.length * 25)}%` }} /></div>
+            <div className="mt-5 flex items-end justify-between"><p className="font-[var(--font-space-grotesk)] text-3xl font-bold">{metrics.dueSoonCount}</p><p className="text-right text-xs text-white/50">dans les<br />7 prochains jours</p></div>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#e8712b]" style={{ width: `${Math.min(100, metrics.dueSoonCount * 25)}%` }} /></div>
             <p className="mt-3 text-xs text-white/50">{metrics.pendingRevenue ? `${formatCfa(metrics.pendingRevenue)} encore à recouvrer` : "Aucun encours à recouvrer"}</p>
           </div>
         </section>

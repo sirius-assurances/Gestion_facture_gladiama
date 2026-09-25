@@ -198,6 +198,83 @@ export async function getClients() {
   return (await prisma.client.findMany({ orderBy: { name: "asc" } })).map(mapClient);
 }
 
+export type DashboardMetrics = {
+  totalRevenue: number;
+  paidRevenue: number;
+  sentRevenue: number;
+  draftRevenue: number;
+  pendingRevenue: number;
+  paidCount: number;
+  pendingCount: number;
+  totalCount: number;
+  paymentRate: number;
+  monthInvoiceCount: number;
+  monthRevenue: number;
+  clientsCount: number;
+  overdueCount: number;
+  overdueRevenue: number;
+  overdueInvoices: InvoiceRecord[];
+  dueSoonCount: number;
+  recentInvoices: InvoiceRecord[];
+};
+
+export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+  await requireUser();
+  if ((await prisma.invoice.count()) === 0) await ensureSeeded();
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const dueSoonEnd = new Date(todayStart);
+  dueSoonEnd.setDate(dueSoonEnd.getDate() + 8);
+
+  const [totalAgg, paidAgg, sentAgg, draftAgg, monthAgg, overdueAgg, dueSoonCount, clientsCount, overdueInvoices, recentInvoices] =
+    await Promise.all([
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true }),
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true, where: { status: "PAID" } }),
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, where: { status: "SENT" } }),
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, where: { status: "DRAFT" } }),
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true, where: { createdAt: { gte: startOfMonth, lt: startOfNextMonth } } }),
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true, where: { status: { not: "PAID" }, dueDate: { lt: todayStart } } }),
+      prisma.invoice.count({ where: { status: { not: "PAID" }, dueDate: { gte: todayStart, lt: dueSoonEnd } } }),
+      prisma.client.count(),
+      prisma.invoice.findMany({
+        where: { status: { not: "PAID" }, dueDate: { lt: todayStart } },
+        include: { client: true, items: true },
+        orderBy: { createdAt: "desc" },
+        take: 2,
+      }),
+      prisma.invoice.findMany({ include: { client: true, items: true }, orderBy: { createdAt: "desc" }, take: 3 }),
+    ]);
+
+  const totalCount = totalAgg._count;
+  const paidCount = paidAgg._count;
+  const sentRevenue = Number(sentAgg._sum.totalTtc ?? 0);
+  const draftRevenue = Number(draftAgg._sum.totalTtc ?? 0);
+
+  return {
+    totalRevenue: Number(totalAgg._sum.totalTtc ?? 0),
+    paidRevenue: Number(paidAgg._sum.totalTtc ?? 0),
+    sentRevenue,
+    draftRevenue,
+    pendingRevenue: sentRevenue + draftRevenue,
+    paidCount,
+    pendingCount: totalCount - paidCount,
+    totalCount,
+    paymentRate: totalCount ? Math.round((paidCount / totalCount) * 100) : 0,
+    monthInvoiceCount: monthAgg._count,
+    monthRevenue: Number(monthAgg._sum.totalTtc ?? 0),
+    clientsCount,
+    overdueCount: overdueAgg._count,
+    overdueRevenue: Number(overdueAgg._sum.totalTtc ?? 0),
+    overdueInvoices: overdueInvoices.map(mapInvoice),
+    dueSoonCount,
+    recentInvoices: recentInvoices.map(mapInvoice),
+  };
+}
+
 export async function getInvoices() {
   await requireUser();
   if ((await prisma.invoice.count()) === 0) await ensureSeeded();
