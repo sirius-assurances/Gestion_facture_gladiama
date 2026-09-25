@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Download, ExternalLink, FileText, Save } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, Eye, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/invoice-storage";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
+import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
 
 export default function InvoiceDetailsPage() {
   const params = useParams();
@@ -24,6 +25,9 @@ export default function InvoiceDetailsPage() {
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [pdfStatus, setPdfStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [shareNotice, setShareNotice] = useState("");
 
   useEffect(() => {
     async function loadInvoice() {
@@ -33,6 +37,14 @@ export default function InvoiceDetailsPage() {
     }
     void loadInvoice();
   }, [params.id]);
+
+  // Revoke the object URL backing the inline preview so we don't leak
+  // memory when the preview is closed or the page is left.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const totals = useMemo(() => {
     if (!invoice) return { totalHt: 0, totalTva: 0, totalTtc: 0 };
@@ -103,6 +115,36 @@ export default function InvoiceDetailsPage() {
   const handleViewStoredPdf = async () => {
     const url = await getInvoicePdfUrl(invoice.id);
     if (url) window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleTogglePreview = async () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const doc = await generateInvoiceDocument(getPdfData());
+      setPreviewUrl(URL.createObjectURL(doc.output("blob")));
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleShare = async (channel: "whatsapp" | "email") => {
+    const client = clients.find((item) => item.name === invoice.client);
+    const data = getPdfData();
+    const fileName = `Facture_${invoice.number.replace(/[^a-z0-9]/gi, "_")}_${invoice.client.replace(/\s+/g, "_")}.pdf`;
+    const totalFormatted = formatCfa(totals.totalTtc);
+    const doc = await generateInvoiceDocument(data);
+    const result = await sharePDF(doc.output("blob"), fileName, invoice.client, invoice.number, totalFormatted, data.periodStart, data.periodEnd);
+    if (result.success || result.method === "cancelled") return;
+    doc.save(fileName);
+    if (channel === "whatsapp") openWhatsAppFallback(fileName, invoice.client, invoice.number, totalFormatted, client?.phone);
+    else openEmailFallback(fileName, invoice.client, invoice.number, totalFormatted, data.periodStart, data.periodEnd, client?.email);
+    setShareNotice("PDF téléchargé. Attachez-le dans votre conversation.");
+    window.setTimeout(() => setShareNotice(""), 5000);
   };
 
   const moveToNextStatus = () => {
@@ -330,8 +372,47 @@ export default function InvoiceDetailsPage() {
             {pdfStatus === "error" && (
               <p className="mt-2 text-center text-xs text-[#e8a0a0]">Le PDF a été téléchargé mais pas sauvegardé en ligne. Réessayez plus tard.</p>
             )}
+
+            <button
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+              type="button"
+              disabled={previewLoading}
+              onClick={handleTogglePreview}
+            >
+              <Eye size={17} /> {previewLoading ? "Génération..." : previewUrl ? "Masquer l'aperçu" : "Visualiser la facture"}
+            </button>
+
+            <button
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-5 py-3 text-sm font-semibold text-white hover:bg-[#1db954]"
+              type="button"
+              onClick={() => handleShare("whatsapp")}
+            >
+              <MessageCircle size={17} /> WhatsApp
+            </button>
+
+            <button
+              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
+              type="button"
+              onClick={() => handleShare("email")}
+            >
+              <Mail size={17} /> Email
+            </button>
+
+            {shareNotice && <p className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-center text-xs text-white/80">{shareNotice}</p>}
           </aside>
         </div>
+
+        {previewUrl && (
+          <section className="mt-6 overflow-hidden rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7]">
+            <div className="flex items-center justify-between border-b border-[#e4e3dd] px-5 py-3">
+              <p className="text-sm font-semibold text-[#172238]">Aperçu de la facture</p>
+              <button className="text-xs font-semibold text-[#6f7885] hover:text-[#172238]" type="button" onClick={handleTogglePreview}>
+                Fermer
+              </button>
+            </div>
+            <iframe className="h-[80vh] w-full" src={previewUrl} title={`Aperçu facture ${invoice.number}`} />
+          </section>
+        )}
       </div>
       <MobileNav />
     </main>
