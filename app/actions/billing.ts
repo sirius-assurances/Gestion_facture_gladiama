@@ -7,6 +7,7 @@ import { formatFrenchDate } from "@/lib/format";
 import {
   defaultClients,
   defaultInvoices,
+  TVA_RATE_PERCENT,
   type ClientRecord,
   type InvoiceRecord,
   type InvoiceStatus,
@@ -47,6 +48,9 @@ const invoiceInputSchema = z.object({
   quantity: z.number().finite().gt(0).max(1_000_000_000),
   unitPrice: money,
   hasTva: z.boolean(),
+  // The client still sends its own computed totals for the optimistic UI,
+  // but the server never trusts them — totals are always recomputed from
+  // quantity/unitPrice/hasTva (see computeTotals) before being stored.
   totalHt: money,
   totalTva: money,
   totalTtc: money,
@@ -94,6 +98,12 @@ function dateToInput(value: Date) {
 
 function amount(value: number, decimals = 2) {
   return value.toFixed(decimals);
+}
+
+function computeTotals(quantity: number, unitPrice: number, hasTva: boolean) {
+  const totalHt = quantity * unitPrice;
+  const totalTva = hasTva ? totalHt * (TVA_RATE_PERCENT / 100) : 0;
+  return { totalHt, totalTva, totalTtc: totalHt + totalTva };
 }
 
 function mapClient(client: Awaited<ReturnType<typeof prisma.client.findMany>>[number]): ClientRecord {
@@ -390,6 +400,8 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
     : await prisma.client.findFirst({ where: { name: data.client } });
   if (!client) throw new Error("Client introuvable.");
 
+  const totals = computeTotals(data.quantity, data.unitPrice, data.hasTva);
+
   await prisma.$transaction(async (transaction) => {
     const [{ nextval }] = await transaction.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('facturation.invoice_number_seq') AS nextval`;
     await transaction.invoice.create({
@@ -400,13 +412,14 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
         periodEnd: dateFromInput(data.periodEnd),
         dueDate: dateFromInput(data.dueDate ?? data.periodEnd),
         hasTva: data.hasTva,
-        totalHt: amount(data.totalHt),
-        totalTva: amount(data.totalTva),
-        totalTtc: amount(data.totalTtc),
+        tvaRate: amount(TVA_RATE_PERCENT),
+        totalHt: amount(totals.totalHt),
+        totalTva: amount(totals.totalTva),
+        totalTtc: amount(totals.totalTtc),
         status: statusToDb[data.status ?? "Brouillon"],
         createdByEmail: user.email,
         updatedByEmail: user.email,
-        items: { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
+        items: { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(totals.totalHt) } },
       },
     });
   });
@@ -419,6 +432,7 @@ export async function updateInvoice(invoice: InvoiceRecord) {
   if (!client) throw new Error("Client introuvable.");
   const existing = await prisma.invoice.findUnique({ where: { id: data.id }, include: { items: true } });
   if (!existing) throw new Error("Facture introuvable.");
+  const totals = computeTotals(data.quantity, data.unitPrice, data.hasTva);
   await prisma.invoice.update({
     where: { id: data.id },
     data: {
@@ -427,14 +441,15 @@ export async function updateInvoice(invoice: InvoiceRecord) {
       periodEnd: dateFromInput(data.periodEnd),
       dueDate: dateFromInput(data.dueDate ?? data.periodEnd),
       hasTva: data.hasTva,
-      totalHt: amount(data.totalHt),
-      totalTva: amount(data.totalTva),
-      totalTtc: amount(data.totalTtc),
+      tvaRate: amount(TVA_RATE_PERCENT),
+      totalHt: amount(totals.totalHt),
+      totalTva: amount(totals.totalTva),
+      totalTtc: amount(totals.totalTtc),
       status: statusToDb[data.status],
       updatedByEmail: user.email,
       items: existing.items[0]
-        ? { update: { where: { id: existing.items[0].id }, data: { designation: data.designation, quantity: amount(data.quantity, 3), unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } } }
-        : { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
+        ? { update: { where: { id: existing.items[0].id }, data: { designation: data.designation, quantity: amount(data.quantity, 3), unitPrice: amount(data.unitPrice), total: amount(totals.totalHt) } } }
+        : { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(totals.totalHt) } },
     },
   });
 }

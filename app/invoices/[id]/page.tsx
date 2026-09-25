@@ -11,6 +11,7 @@ import {
   getInvoiceDueDate,
   invoiceStatusMeta,
   invoiceStatusOrder,
+  TVA_RATE_PERCENT,
   type InvoiceRecord,
 } from "@/lib/invoice-storage";
 import { formatCfa } from "@/lib/format";
@@ -33,7 +34,7 @@ export default function InvoiceDetailsPage() {
   const totals = useMemo(() => {
     if (!invoice) return { totalHt: 0, totalTva: 0, totalTtc: 0 };
     const totalHt = invoice.quantity * invoice.unitPrice;
-    const totalTva = invoice.hasTva ? totalHt * 0.18 : 0;
+    const totalTva = invoice.hasTva ? totalHt * (TVA_RATE_PERCENT / 100) : 0;
     return { totalHt, totalTva, totalTtc: totalHt + totalTva };
   }, [invoice]);
 
@@ -167,7 +168,7 @@ export default function InvoiceDetailsPage() {
               <label className="flex items-center justify-between rounded-xl border border-[#e4e3dd] bg-white p-4 sm:col-span-2">
                 <span>
                   <span className="block text-sm font-semibold">TVA</span>
-                  <span className="mt-1 block text-xs text-[#6f7885]">Appliquer 18% au prix unitaire</span>
+                  <span className="mt-1 block text-xs text-[#6f7885]">Appliquer {TVA_RATE_PERCENT}% au prix unitaire</span>
                 </span>
                 <input
                   checked={invoice.hasTva}
@@ -233,7 +234,7 @@ export default function InvoiceDetailsPage() {
               </div>
               {invoice.hasTva && (
                 <div className="flex justify-between text-white/65">
-                  <span>TVA (18%)</span>
+                  <span>TVA ({TVA_RATE_PERCENT}%)</span>
                   <span className="font-semibold text-white">{formatCfa(totals.totalTva)}</span>
                 </div>
               )}

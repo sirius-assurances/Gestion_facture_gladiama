@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { numberToFrenchWords } from "@/lib/pdf/number-to-words";
 import { formatCfa, formatFrenchDate, formatGroupedNumber } from "@/lib/format";
+import { TVA_RATE_PERCENT } from "@/lib/invoice-storage";
 
 export type InvoicePdfData = {
   invoiceNumber: string;
@@ -169,7 +170,7 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
 
   let totalY = dataY + rowHeight;
   if (data.hasTva) {
-    ["TVA (18%)", "TTC"].forEach((label, index) => {
+    [`TVA (${TVA_RATE_PERCENT}%)`, "TTC"].forEach((label, index) => {
       doc.rect(20, totalY, 170, rowHeight, "D");
       doc.text(label, 23, totalY + 10);
       doc.text(formatCfa(index === 0 ? data.totalTva : data.totalTtc), 187, totalY + 10, { align: "right" });

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { createInvoice, getClients, getInvoiceCount } from "@/app/actions/billing";
-import type { ClientRecord } from "@/lib/invoice-storage";
+import { TVA_RATE_PERCENT, type ClientRecord } from "@/lib/invoice-storage";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
@@ -43,7 +43,7 @@ export default function InvoiceForm() {
 
   const totals = useMemo(() => {
     const totalHt = Math.max(0, quantity) * Math.max(0, unitPrice);
-    const totalTva = hasTva ? totalHt * 0.18 : 0;
+    const totalTva = hasTva ? totalHt * (TVA_RATE_PERCENT / 100) : 0;
     return { totalHt, totalTva, totalTtc: totalHt + totalTva };
   }, [hasTva, quantity, unitPrice]);
 
@@ -191,7 +191,7 @@ export default function InvoiceForm() {
         <label className="mt-7 flex cursor-pointer items-center justify-between rounded-xl border border-[#e4e3dd] bg-white p-4">
           <span>
             <span className="block text-sm font-semibold">Appliquer la TVA</span>
-            <span className="mt-1 block text-xs text-[#6f7885]">TVA applicable au taux de 18%</span>
+            <span className="mt-1 block text-xs text-[#6f7885]">TVA applicable au taux de {TVA_RATE_PERCENT}%</span>
           </span>
           <input checked={hasTva} className="h-5 w-5 accent-[#e8712b]" type="checkbox" onChange={(event) => setHasTva(event.target.checked)} />
         </label>
@@ -246,7 +246,7 @@ export default function InvoiceForm() {
           </div>
           {hasTva && (
             <div className="flex justify-between text-white/65">
-              <span>TVA (18%)</span>
+              <span>TVA ({TVA_RATE_PERCENT}%)</span>
               <span className="font-semibold text-white">{formatCfa(totals.totalTva)}</span>
             </div>
           )}

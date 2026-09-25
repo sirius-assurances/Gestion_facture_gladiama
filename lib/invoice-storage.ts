@@ -37,6 +37,12 @@ export type InvoiceRecord = {
 
 export const invoiceStatusOrder: InvoiceStatus[] = ["Brouillon", "Envoyée", "Payée"];
 
+// Single source of truth for the VAT rate applied to invoices. Previously
+// hardcoded as 0.18 in three separate places (the invoice form, the invoice
+// detail page, and the PDF generator's "TVA (18%)" label), which risked
+// drifting out of sync if the rate ever changed.
+export const TVA_RATE_PERCENT = 18;
+
 const PAYMENT_TERM_DAYS = 30;
 
 export function getInvoiceDueDate(invoice: Pick<InvoiceRecord, "periodEnd" | "dueDate">): string {
