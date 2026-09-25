@@ -5,7 +5,7 @@ import { ArrowLeft, FileText, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getClients, getInvoices, updateInvoice } from "@/app/actions/billing";
+import { getClients, getInvoice, updateInvoice } from "@/app/actions/billing";
 import {
   getNextInvoiceStatus,
   getInvoiceDueDate,
@@ -23,9 +23,8 @@ export default function InvoiceDetailsPage() {
 
   useEffect(() => {
     async function loadInvoice() {
-      const [storedInvoices, storedClients] = await Promise.all([getInvoices(), getClients()]);
-      const found = storedInvoices.find((item) => item.id === params.id);
-      setInvoice(found ?? null);
+      const [found, storedClients] = await Promise.all([getInvoice(params.id as string), getClients()]);
+      setInvoice(found);
       setClients(storedClients.map(({ id, name }) => ({ id, name })));
     }
     void loadInvoice();

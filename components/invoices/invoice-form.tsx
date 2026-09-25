@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { createInvoice, getClients, getInvoices } from "@/app/actions/billing";
+import { createInvoice, getClients, getInvoiceCount } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice-storage";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
@@ -26,9 +26,9 @@ export default function InvoiceForm() {
 
   useEffect(() => {
     async function loadForm() {
-      const [storedClients, storedInvoices] = await Promise.all([getClients(), getInvoices()]);
+      const [storedClients, invoiceCount] = await Promise.all([getClients(), getInvoiceCount()]);
       setClients(storedClients);
-      setInvoiceCount(storedInvoices.length);
+      setInvoiceCount(invoiceCount);
       const preferredClientId = searchParams.get("client");
       const initialClient = storedClients.find((client) => client.id === preferredClientId) ?? storedClients[0];
 
@@ -93,8 +93,8 @@ export default function InvoiceForm() {
       totalTtc: totals.totalTtc,
       status: "Brouillon" as const,
     };
-    const next = await createInvoice(invoice);
-    setInvoiceCount(next.length);
+    await createInvoice(invoice);
+    setInvoiceCount((current) => current + 1);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2500);
   }

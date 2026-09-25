@@ -61,6 +61,22 @@ const invoiceRecordSchema = invoiceInputSchema.extend({
   status: invoiceStatusSchema,
 });
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+const paginationSchema = z.object({
+  page: z.number().int().min(1).optional(),
+  pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
+});
+
+const clientsPageSchema = paginationSchema.extend({
+  search: z.string().trim().max(200).optional(),
+});
+
+const invoicesPageSchema = paginationSchema.extend({
+  status: invoiceStatusSchema.optional(),
+});
+
 async function requireUser() {
   const supabase = await createSupabaseServerClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -189,6 +205,64 @@ export async function getInvoices() {
   return invoices.map(mapInvoice);
 }
 
+export async function getInvoiceCount() {
+  await requireUser();
+  if ((await prisma.invoice.count()) === 0) await ensureSeeded();
+  return prisma.invoice.count();
+}
+
+export async function getInvoice(invoiceId: string) {
+  await requireUser();
+  const id = z.string().min(1).parse(invoiceId);
+  const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, items: true } });
+  return invoice ? mapInvoice(invoice) : null;
+}
+
+export async function getClient(clientId: string) {
+  await requireUser();
+  const id = z.string().min(1).parse(clientId);
+  const client = await prisma.client.findUnique({ where: { id } });
+  return client ? mapClient(client) : null;
+}
+
+export async function getClientsPage(params: { page?: number; pageSize?: number; search?: string } = {}) {
+  await requireUser();
+  const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search } = clientsPageSchema.parse(params);
+  if ((await prisma.client.count()) === 0) await ensureSeeded();
+
+  const where = search ? { name: { contains: search, mode: "insensitive" as const } } : undefined;
+  const [total, clients] = await Promise.all([
+    prisma.client.count({ where }),
+    prisma.client.findMany({ where, orderBy: { name: "asc" }, skip: (page - 1) * pageSize, take: pageSize }),
+  ]);
+
+  return { clients: clients.map(mapClient), total, page, pageSize };
+}
+
+export async function getInvoicesPage(params: { page?: number; pageSize?: number; status?: InvoiceStatus } = {}) {
+  await requireUser();
+  const { page = 1, pageSize = DEFAULT_PAGE_SIZE, status } = invoicesPageSchema.parse(params);
+  if ((await prisma.invoice.count()) === 0) await ensureSeeded();
+
+  const where = status ? { status: statusToDb[status] } : undefined;
+  const [total, invoices, statusGroups] = await Promise.all([
+    prisma.invoice.count({ where }),
+    prisma.invoice.findMany({
+      where,
+      include: { client: true, items: true },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.invoice.groupBy({ by: ["status"], _count: true }),
+  ]);
+
+  const statusCounts: Record<InvoiceStatus, number> = { Brouillon: 0, Envoyée: 0, Payée: 0 };
+  for (const group of statusGroups) statusCounts[statusFromDb[group.status]] = group._count;
+
+  return { invoices: invoices.map(mapInvoice), total, page, pageSize, statusCounts };
+}
+
 export async function createClient(input: Omit<ClientRecord, "id">) {
   const user = await requireUser();
   const data = clientInputSchema.parse(input);
@@ -229,7 +303,6 @@ export async function removeClient(clientId: string) {
   await requireUser();
   const id = z.string().min(1).parse(clientId);
   await prisma.client.delete({ where: { id } });
-  return getClients();
 }
 
 export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" | "date" | "createdAt">) {
@@ -260,7 +333,6 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
       },
     });
   });
-  return getInvoices();
 }
 
 export async function updateInvoice(invoice: InvoiceRecord) {
@@ -288,7 +360,6 @@ export async function updateInvoice(invoice: InvoiceRecord) {
         : { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(data.totalHt) } },
     },
   });
-  return getInvoices();
 }
 
 export async function updateInvoiceStatus(invoiceNumber: string, status: InvoiceStatus) {
@@ -296,12 +367,10 @@ export async function updateInvoiceStatus(invoiceNumber: string, status: Invoice
   const number = z.string().min(1).parse(invoiceNumber);
   const nextStatus = invoiceStatusSchema.parse(status);
   await prisma.invoice.update({ where: { invoiceNumber: number }, data: { status: statusToDb[nextStatus], updatedByEmail: user.email } });
-  return getInvoices();
 }
 
 export async function removeInvoice(invoiceNumber: string) {
   await requireUser();
   const number = z.string().min(1).parse(invoiceNumber);
   await prisma.invoice.delete({ where: { invoiceNumber: number } });
-  return getInvoices();
 }

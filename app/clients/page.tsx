@@ -1,25 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, MapPin, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getClients, removeClient } from "@/app/actions/billing";
+import { getClientsPage, removeClient } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice-storage";
+
+const PAGE_SIZE = 12;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  // Bumped after a mutation to re-run the fetch effect below without
+  // calling it imperatively.
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    void getClients().then(setClients);
-  }, []);
+    async function loadPage() {
+      const result = await getClientsPage({ page, pageSize: PAGE_SIZE, search: search || undefined });
+      setClients(result.clients);
+      setTotal(result.total);
+    }
+    void loadPage();
+  }, [page, search, reloadToken]);
 
-  const filteredClients = clients.filter((client) => `${client.name} ${client.location}`.toLowerCase().includes(query.toLowerCase()));
+  // Debounce the search box so we don't hit the server on every keystroke.
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setSearch(query);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [query]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleDelete = async (clientId: string) => {
-    const nextClients = await removeClient(clientId);
-    setClients(nextClients);
+    await removeClient(clientId);
+    if (clients.length === 1 && page > 1) setPage(page - 1);
+    else setReloadToken((token) => token + 1);
   };
 
   return (
@@ -46,7 +70,7 @@ export default function ClientsPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {filteredClients.map((client) => (
+          {clients.map((client) => (
             <article className="rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7] p-5" key={client.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -97,9 +121,35 @@ export default function ClientsPage() {
           ))}
         </div>
 
-        {filteredClients.length === 0 && (
+        {clients.length === 0 && (
           <div className="rounded-2xl border border-dashed border-[#d9d8d1] bg-[#fbfaf7] p-10 text-center text-sm text-[#6f7885]">
             Aucun client trouvé.
+          </div>
+        )}
+
+        {total > 0 && (
+          <div className="mt-5 flex items-center justify-between gap-3 text-sm text-[#6f7885]">
+            <p>
+              Page {page} sur {totalPages} · {total} client{total > 1 ? "s" : ""}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white px-3 py-2 font-semibold text-[#172238] hover:border-[#d9d8d1] disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronLeft size={14} /> Précédent
+              </button>
+              <button
+                className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white px-3 py-2 font-semibold text-[#172238] hover:border-[#d9d8d1] disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                Suivant <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         )}
       </div>

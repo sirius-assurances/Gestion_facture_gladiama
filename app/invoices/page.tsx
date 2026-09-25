@@ -1,10 +1,10 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, Eye, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getInvoices, removeInvoice, updateInvoiceStatus as updateInvoiceStatusInDatabase } from "@/app/actions/billing";
+import { getInvoicesPage, removeInvoice, updateInvoiceStatus as updateInvoiceStatusInDatabase } from "@/app/actions/billing";
 import {
   getInvoiceDueDate,
   isInvoiceOverdue,
@@ -17,34 +17,52 @@ import {
 } from "@/lib/invoice-storage";
 
 const filterOptions: Array<"Toutes" | InvoiceStatus> = ["Toutes", "Brouillon", "Envoyée", "Payée"];
+const PAGE_SIZE = 15;
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [filter, setFilter] = useState<"Toutes" | InvoiceStatus>("Toutes");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<Record<InvoiceStatus, number>>({ Brouillon: 0, Envoyée: 0, Payée: 0 });
+  // Bumped after a mutation to re-run the fetch effect below without
+  // calling it imperatively.
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    void getInvoices().then(setInvoices);
-  }, []);
+    async function loadPage() {
+      const result = await getInvoicesPage({ page, pageSize: PAGE_SIZE, status: filter === "Toutes" ? undefined : filter });
+      setInvoices(result.invoices);
+      setTotal(result.total);
+      setStatusCounts(result.statusCounts);
+    }
+    void loadPage();
+  }, [page, filter, reloadToken]);
 
-  const visibleInvoices = filter === "Toutes" ? invoices : invoices.filter((invoice) => invoice.status === filter);
+  const changeFilter = (next: "Toutes" | InvoiceStatus) => {
+    setFilter(next);
+    setPage(1);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const updateStatus = async (invoiceNumber: string) => {
     const currentInvoice = invoices.find((invoice) => invoice.number === invoiceNumber);
     if (!currentInvoice) return;
 
     const nextStatus = getNextInvoiceStatus(currentInvoice.status);
-    const updated = await updateInvoiceStatusInDatabase(invoiceNumber, nextStatus);
-    setInvoices(updated);
+    await updateInvoiceStatusInDatabase(invoiceNumber, nextStatus);
+    setReloadToken((token) => token + 1);
   };
 
-  const statusSummary = invoiceStatusOrder.map((status) => ({
-    status,
-    count: invoices.filter((invoice) => invoice.status === status).length,
-  }));
+  const statusSummary = invoiceStatusOrder.map((status) => ({ status, count: statusCounts[status] }));
 
   const removeInvoiceFromDatabase = async (invoiceNumber: string) => {
-    const updated = await removeInvoice(invoiceNumber);
-    setInvoices(updated);
+    await removeInvoice(invoiceNumber);
+    // If we just removed the last invoice on this page, step back a page
+    // instead of showing an empty page that still claims more exist.
+    if (invoices.length === 1 && page > 1) setPage(page - 1);
+    else setReloadToken((token) => token + 1);
   };
 
   return (
@@ -83,7 +101,7 @@ export default function InvoicesPage() {
               className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold ${filter === item ? "bg-[#172238] text-white" : "border border-[#e4e3dd] bg-[#fbfaf7] text-[#6f7885]"}`}
               key={item}
               type="button"
-              onClick={() => setFilter(item)}
+              onClick={() => changeFilter(item)}
             >
               {item}
             </button>
@@ -99,7 +117,7 @@ export default function InvoicesPage() {
             <span>Action</span>
           </div>
 
-          {visibleInvoices.map((invoice) => (
+          {invoices.map((invoice) => (
             <div
               className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-[#e4e3dd] px-4 py-4 last:border-0 sm:px-6 md:grid-cols-[1fr_1.2fr_1fr_1fr_auto] md:gap-4"
               key={invoice.id}
@@ -153,9 +171,35 @@ export default function InvoicesPage() {
           ))}
         </section>
 
-        {visibleInvoices.length === 0 && (
+        {invoices.length === 0 && (
           <div className="mt-5 rounded-2xl border border-dashed border-[#d9d8d1] bg-[#fbfaf7] p-10 text-center text-sm text-[#6f7885]">
             Aucune facture ne correspond à ce filtre.
+          </div>
+        )}
+
+        {total > 0 && (
+          <div className="mt-5 flex items-center justify-between gap-3 text-sm text-[#6f7885]">
+            <p>
+              Page {page} sur {totalPages} · {total} facture{total > 1 ? "s" : ""}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white px-3 py-2 font-semibold text-[#172238] hover:border-[#d9d8d1] disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronLeft size={14} /> Précédent
+              </button>
+              <button
+                className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white px-3 py-2 font-semibold text-[#172238] hover:border-[#d9d8d1] disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                Suivant <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         )}
       </div>
