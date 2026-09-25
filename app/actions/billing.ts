@@ -143,6 +143,7 @@ function mapInvoice(invoice: Awaited<ReturnType<typeof prisma.invoice.findMany<{
     createdAt: invoice.createdAt.toISOString(),
     createdByEmail: invoice.createdByEmail ?? undefined,
     updatedByEmail: invoice.updatedByEmail ?? undefined,
+    hasStoredPdf: Boolean(invoice.pdfPath),
   };
 }
 
@@ -310,6 +311,40 @@ export async function getClient(clientId: string) {
   const id = z.string().min(1).parse(clientId);
   const client = await prisma.client.findUnique({ where: { id } });
   return client ? mapClient(client) : null;
+}
+
+const PDF_BUCKET = "invoices";
+
+// Stores the already-generated PDF (built client-side with jsPDF, base64
+// encoded) in Supabase Storage so it can be re-downloaded later without
+// regenerating it. The bucket is private; access is via short-lived signed
+// URLs only (see getInvoicePdfUrl).
+export async function saveInvoicePdf(invoiceId: string, pdfBase64: string) {
+  await requireUser();
+  const id = z.string().min(1).parse(invoiceId);
+  const base64 = z.string().min(1).max(15_000_000).parse(pdfBase64);
+  const invoice = await prisma.invoice.findUnique({ where: { id } });
+  if (!invoice) throw new Error("Facture introuvable.");
+
+  const supabase = await createSupabaseServerClient();
+  const path = `${id}.pdf`;
+  const { error } = await supabase.storage
+    .from(PDF_BUCKET)
+    .upload(path, Buffer.from(base64, "base64"), { contentType: "application/pdf", upsert: true });
+  if (error) throw new Error(`Échec de l'enregistrement du PDF : ${error.message}`);
+
+  await prisma.invoice.update({ where: { id }, data: { pdfPath: path } });
+}
+
+export async function getInvoicePdfUrl(invoiceId: string) {
+  await requireUser();
+  const id = z.string().min(1).parse(invoiceId);
+  const invoice = await prisma.invoice.findUnique({ where: { id } });
+  if (!invoice?.pdfPath) return null;
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.storage.from(PDF_BUCKET).createSignedUrl(invoice.pdfPath, 60);
+  return error ? null : data.signedUrl;
 }
 
 export async function getClientsPage(params: { page?: number; pageSize?: number; search?: string } = {}) {

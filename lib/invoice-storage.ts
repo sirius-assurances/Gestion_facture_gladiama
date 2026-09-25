@@ -33,6 +33,7 @@ export type InvoiceRecord = {
   createdAt: string;
   createdByEmail?: string;
   updatedByEmail?: string;
+  hasStoredPdf?: boolean;
 };
 
 export const invoiceStatusOrder: InvoiceStatus[] = ["Brouillon", "Envoyée", "Payée"];

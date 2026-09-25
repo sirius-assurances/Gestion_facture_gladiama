@@ -48,6 +48,7 @@ model Invoice {
   updatedAt     DateTime      @updatedAt
   createdByEmail String?
   updatedByEmail String?
+  pdfPath       String?
   client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
   items         InvoiceItem[]
 

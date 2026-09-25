@@ -1,32 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FileText, Save } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, FileText, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
-import { getClients, getInvoice, updateInvoice } from "@/app/actions/billing";
+import { getClients, getInvoice, getInvoicePdfUrl, saveInvoicePdf, updateInvoice } from "@/app/actions/billing";
 import {
   getNextInvoiceStatus,
   getInvoiceDueDate,
   invoiceStatusMeta,
   invoiceStatusOrder,
   TVA_RATE_PERCENT,
+  type ClientRecord,
   type InvoiceRecord,
 } from "@/lib/invoice-storage";
-import { formatCfa } from "@/lib/format";
+import { formatCfa, formatFrenchDate } from "@/lib/format";
+import { generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 
 export default function InvoiceDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null);
-  const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
+  const [clients, setClients] = useState<ClientRecord[]>([]);
+  const [pdfStatus, setPdfStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     async function loadInvoice() {
       const [found, storedClients] = await Promise.all([getInvoice(params.id as string), getClients()]);
       setInvoice(found);
-      setClients(storedClients.map(({ id, name }) => ({ id, name })));
+      setClients(storedClients);
     }
     void loadInvoice();
   }, [params.id]);
@@ -55,6 +58,51 @@ export default function InvoiceDetailsPage() {
   const handleSave = async () => {
     await updateInvoice({ ...invoice, totalHt: totals.totalHt, totalTva: totals.totalTva, totalTtc: totals.totalTtc });
     router.push("/invoices");
+  };
+
+  const getPdfData = (): InvoicePdfData => {
+    const client = clients.find((item) => item.name === invoice.client);
+    return {
+      invoiceNumber: invoice.number,
+      clientName: invoice.client,
+      clientLocation: client?.location ?? "Dakar, Sénégal",
+      projectName: client?.projectName,
+      marketNumber: "Marché N°TA3/1087/AGR",
+      contractNumber: "Contrat T0032/24",
+      periodStart: formatFrenchDate(invoice.periodStart),
+      periodEnd: formatFrenchDate(invoice.periodEnd),
+      designation: invoice.designation,
+      quantity: invoice.quantity,
+      unitPrice: invoice.unitPrice,
+      hasTva: invoice.hasTva,
+      totalHt: totals.totalHt,
+      totalTva: totals.totalTva,
+      totalTtc: totals.totalTtc,
+    };
+  };
+
+  const handleDownloadPdf = async () => {
+    const doc = await generateInvoiceDocument(getPdfData());
+    doc.save(`facture-${invoice.number.replace(/[^a-z0-9]/gi, "-")}.pdf`);
+
+    // Persist the same PDF to Supabase Storage so it can be re-downloaded
+    // later without regenerating it. Best-effort: the local download above
+    // already succeeded either way.
+    setPdfStatus("saving");
+    try {
+      const dataUri = doc.output("datauristring");
+      const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
+      await saveInvoicePdf(invoice.id, base64);
+      setInvoice((current) => (current ? { ...current, hasStoredPdf: true } : current));
+      setPdfStatus("saved");
+    } catch {
+      setPdfStatus("error");
+    }
+  };
+
+  const handleViewStoredPdf = async () => {
+    const url = await getInvoicePdfUrl(invoice.id);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const moveToNextStatus = () => {
@@ -260,6 +308,28 @@ export default function InvoiceDetailsPage() {
             >
               <Save size={17} /> Enregistrer les modifications
             </button>
+
+            <button
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+              type="button"
+              disabled={pdfStatus === "saving"}
+              onClick={handleDownloadPdf}
+            >
+              <Download size={17} /> {pdfStatus === "saving" ? "Enregistrement..." : "Télécharger le PDF"}
+            </button>
+
+            {invoice.hasStoredPdf && (
+              <button
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold text-white/60 hover:text-white"
+                type="button"
+                onClick={handleViewStoredPdf}
+              >
+                <ExternalLink size={13} /> Voir la dernière version enregistrée
+              </button>
+            )}
+            {pdfStatus === "error" && (
+              <p className="mt-2 text-center text-xs text-[#e8a0a0]">Le PDF a été téléchargé mais pas sauvegardé en ligne. Réessayez plus tard.</p>
+            )}
           </aside>
         </div>
       </div>
