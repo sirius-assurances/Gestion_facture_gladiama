@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import { numberToFrenchWords } from "@/lib/pdf/number-to-words";
 import { formatCfa, formatFrenchDate, formatGroupedNumber } from "@/lib/format";
 import { TVA_RATE_PERCENT } from "@/lib/invoice-storage";
+import { getInvoiceTableLayout } from "@/lib/pdf/layout";
 
 export type InvoicePdfData = {
   invoiceNumber: string;
@@ -131,9 +132,7 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
   doc.text(doc.splitTextToSize(subject, 170 - objetWidth), 20 + objetWidth, objetY);
 
   const tableY = objetY + 13;
-  const columns = data.hasTva ? [20, 91, 135, 190] : [20, 68, 106, 143, 190];
-  const rowHeight = data.hasTva ? 15 : 17;
-  const headers = data.hasTva ? ["DESIGNATION", "PRIX UNITAIRE", "QUANTITE", "TOTAL"] : ["DESIGNATION", "QUANTITE", "PRIX M3", "TOTAL"];
+  const { headers, columns, rowHeight, rowCount } = getInvoiceTableLayout(data.hasTva);
   doc.setFillColor(...colors.yellow);
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
@@ -183,8 +182,7 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
     doc.text(formatCfa(data.totalHt), 187, totalY + 10, { align: "right" });
   }
 
-  const tableRowCount = data.hasTva ? 4 : 3;
-  const tableBottomY = tableY + tableRowCount * rowHeight;
+  const tableBottomY = tableY + rowCount * rowHeight;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.5);
