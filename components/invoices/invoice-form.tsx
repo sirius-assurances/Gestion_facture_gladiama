@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { createInvoice, getClients, getInvoiceCount } from "@/app/actions/billing";
+import { createInvoice, getClients, getNextInvoiceNumber } from "@/app/actions/billing";
 import { TVA_RATE_PERCENT, type ClientRecord } from "@/lib/invoice-storage";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
@@ -22,13 +22,14 @@ export default function InvoiceForm() {
   const [dueDate, setDueDate] = useState("2026-10-17");
   const [saved, setSaved] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
-  const [invoiceCount, setInvoiceCount] = useState(0);
+  const [actionError, setActionError] = useState("");
+  const [nextNumber, setNextNumber] = useState("");
 
   useEffect(() => {
     async function loadForm() {
-      const [storedClients, invoiceCount] = await Promise.all([getClients(), getInvoiceCount()]);
+      const [storedClients, upcomingNumber] = await Promise.all([getClients(), getNextInvoiceNumber()]);
       setClients(storedClients);
-      setInvoiceCount(invoiceCount);
+      setNextNumber(upcomingNumber);
       const preferredClientId = searchParams.get("client");
       const initialClient = storedClients.find((client) => client.id === preferredClientId) ?? storedClients[0];
 
@@ -59,12 +60,12 @@ export default function InvoiceForm() {
   function getPdfData(): InvoicePdfData {
     const client = clients.find((item) => item.name === clientName);
     return {
-      invoiceNumber: `N°${invoiceCount + 1}`,
+      invoiceNumber: nextNumber,
       clientName,
       clientLocation: client?.location ?? "Dakar, Sénégal",
       projectName: client?.projectName,
-      marketNumber: "Marché N°TA3/1087/AGR",
-      contractNumber: "Contrat T0032/24",
+      marketNumber: client?.marketNumber,
+      contractNumber: client?.contractNumber,
       periodStart: formatFrenchDate(periodStart),
       periodEnd: formatFrenchDate(periodEnd),
       designation,
@@ -93,19 +94,41 @@ export default function InvoiceForm() {
       totalTtc: totals.totalTtc,
       status: "Brouillon" as const,
     };
-    await createInvoice(invoice);
-    setInvoiceCount((current) => current + 1);
+    setActionError("");
+    try {
+      await createInvoice(invoice);
+      setNextNumber(await getNextInvoiceNumber());
+    } catch {
+      setActionError("Impossible d'enregistrer cette facture. Vérifiez les champs et réessayez.");
+      return;
+    }
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2500);
   }
 
+  async function handleDownload() {
+    setActionError("");
+    try {
+      await downloadInvoicePdf(getPdfData());
+    } catch {
+      setActionError("Impossible de générer le PDF de cette facture.");
+    }
+  }
+
   async function handleShare(channel: "whatsapp" | "email") {
+    setActionError("");
     const data = getPdfData();
     const client = clients.find((item) => item.name === clientName);
     const invoiceNumber = data.invoiceNumber;
     const fileName = `Facture_${invoiceNumber.replace(/[^a-z0-9]/gi, "_")}_${clientName.replace(/\s+/g, "_")}.pdf`;
     const totalFormatted = formatCfa(totals.totalTtc);
-    const doc = await generateInvoiceDocument(data);
+    let doc;
+    try {
+      doc = await generateInvoiceDocument(data);
+    } catch {
+      setActionError("Impossible de générer le PDF à partager.");
+      return;
+    }
     const result = await sharePDF(doc.output("blob"), fileName, clientName, invoiceNumber, totalFormatted, data.periodStart, data.periodEnd);
     if (result.success || result.method === "cancelled") return;
     doc.save(fileName);
@@ -220,7 +243,7 @@ export default function InvoiceForm() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.15em] text-white/50">Aperçu total</p>
-            <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture N°{invoiceCount + 1}</p>
+            <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture {nextNumber || "…"}</p>
           </div>
         </div>
 
@@ -258,7 +281,7 @@ export default function InvoiceForm() {
         </div>
 
         <div className="mt-5 grid gap-2">
-          <button className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#e8712b] px-5 py-3 text-sm font-semibold text-white hover:bg-[#d86322]" type="button" onClick={() => downloadInvoicePdf(getPdfData())}>
+          <button className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#e8712b] px-5 py-3 text-sm font-semibold text-white hover:bg-[#d86322]" type="button" onClick={handleDownload}>
             <FileText size={17} /> Télécharger PDF
           </button>
           <button className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-5 py-3 text-sm font-semibold text-white hover:bg-[#1db954]" type="button" onClick={() => handleShare("whatsapp")}>
@@ -270,6 +293,9 @@ export default function InvoiceForm() {
         </div>
 
         {shareNotice && <p className="mt-4 rounded-lg bg-white/10 px-3 py-2 text-center text-xs text-white/80">{shareNotice}</p>}
+        {actionError && (
+          <p className="mt-4 rounded-lg bg-[#c13a3a]/20 px-3 py-2 text-center text-xs font-semibold text-[#ffd9d9]">{actionError}</p>
+        )}
         <p className="mt-6 text-center text-xs leading-5 text-white/45">Le numéro de facture sera attribué automatiquement à l&apos;enregistrement.</p>
       </aside>
     </div>

@@ -108,6 +108,26 @@ export default function ClientEditPage() {
             </label>
 
             <label className="block">
+              <span className="mb-2 block text-sm font-semibold">Numéro de marché</span>
+              <input
+                className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"
+                placeholder="Marché N°…"
+                value={client.marketNumber ?? ""}
+                onChange={(event) => updateField("marketNumber", event.target.value)}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold">Numéro de contrat</span>
+              <input
+                className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"
+                placeholder="Contrat …"
+                value={client.contractNumber ?? ""}
+                onChange={(event) => updateField("contractNumber", event.target.value)}
+              />
+            </label>
+
+            <label className="block">
               <span className="mb-2 block text-sm font-semibold">Tarif standard</span>
               <input
                 className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"

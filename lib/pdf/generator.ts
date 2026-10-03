@@ -62,9 +62,12 @@ async function loadImage(path: string): Promise<string | null> {
 export async function generateInvoiceDocument(data: InvoicePdfData) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const [header, stamp, footer] = await Promise.all([
+    // These three files are the real assets. Earlier names were tried first
+    // via a fallback chain, but they don't exist in public/images, so every
+    // single PDF generation fired two 404s before falling through.
     loadImage("/images/Picture3.png"),
-    loadImage("/images/cachet_gladiama.png").then((image) => image ?? loadImage("/images/Picture1.png")),
-    loadImage("/images/pied_de_page_gladiama.png").then((image) => image ?? loadImage("/images/Picture2.png")),
+    loadImage("/images/Picture1.png"),
+    loadImage("/images/Picture2.png"),
   ]);
 
   if (header) doc.addImage(header, "PNG", 20, 15, 170, 26.7);

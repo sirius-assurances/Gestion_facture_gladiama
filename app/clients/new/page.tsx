@@ -21,6 +21,8 @@ export default function NewClientPage() {
       phone: String(data.get("phone") || ""),
       email: String(data.get("email") || ""),
       projectName: String(data.get("projectName") || ""),
+      marketNumber: String(data.get("marketNumber") || ""),
+      contractNumber: String(data.get("contractNumber") || ""),
       defaultUnitPrice: Number(data.get("price") ?? 0),
       hasTva: data.get("tva") === "on",
     };
@@ -69,6 +71,16 @@ export default function NewClientPage() {
             <label className="block sm:col-span-2">
               <span className="mb-2 block text-sm font-semibold">Projet (optionnel)</span>
               <input name="projectName" placeholder="Ex. Travaux de terrassement" className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]" />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold">Numéro de marché (optionnel)</span>
+              <input name="marketNumber" placeholder="Ex. Marché N°TA3/1087/AGR" className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]" />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold">Numéro de contrat (optionnel)</span>
+              <input name="contractNumber" placeholder="Ex. Contrat T0032/24" className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]" />
             </label>
 
             <label className="block">

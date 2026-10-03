@@ -26,6 +26,7 @@ export default function InvoiceDetailsPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [pdfStatus, setPdfStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [shareNotice, setShareNotice] = useState("");
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     async function loadInvoice() {
@@ -69,8 +70,8 @@ export default function InvoiceDetailsPage() {
       clientName: invoice.client,
       clientLocation: client?.location ?? "Dakar, Sénégal",
       projectName: client?.projectName,
-      marketNumber: "Marché N°TA3/1087/AGR",
-      contractNumber: "Contrat T0032/24",
+      marketNumber: client?.marketNumber,
+      contractNumber: client?.contractNumber,
       periodStart: formatFrenchDate(invoice.periodStart),
       periodEnd: formatFrenchDate(invoice.periodEnd),
       designation: invoice.designation,
@@ -84,8 +85,17 @@ export default function InvoiceDetailsPage() {
   };
 
   const handleDownloadPdf = async () => {
-    const doc = await generateInvoiceDocument(getPdfData());
-    doc.save(`facture-${invoice.number.replace(/[^a-z0-9]/gi, "-")}.pdf`);
+    setActionError("");
+    let doc;
+    try {
+      doc = await generateInvoiceDocument(getPdfData());
+      doc.save(`facture-${invoice.number.replace(/[^a-z0-9]/gi, "-")}.pdf`);
+    } catch {
+      // Until this was surfaced, a failure here looked like a dead button:
+      // the PDF never appeared and nothing explained why.
+      setActionError("Impossible de générer le PDF de cette facture.");
+      return;
+    }
 
     // Persist the same PDF to Supabase Storage so it can be re-downloaded
     // later without regenerating it. Best-effort: the local download above
@@ -127,6 +137,7 @@ export default function InvoiceDetailsPage() {
   };
 
   const handleViewPdf = async () => {
+    setActionError("");
     const tab = window.open("", "_blank");
     try {
       const doc = await generateInvoiceDocument(getPdfData());
@@ -140,15 +151,23 @@ export default function InvoiceDetailsPage() {
       else tab.close();
     } catch {
       tab?.close();
+      setActionError("Impossible d'ouvrir le PDF de cette facture.");
     }
   };
 
   const handleShare = async (channel: "whatsapp" | "email") => {
+    setActionError("");
     const client = clients.find((item) => item.name === invoice.client);
     const data = getPdfData();
     const fileName = `Facture_${invoice.number.replace(/[^a-z0-9]/gi, "_")}_${invoice.client.replace(/\s+/g, "_")}.pdf`;
     const totalFormatted = formatCfa(totals.totalTtc);
-    const doc = await generateInvoiceDocument(data);
+    let doc;
+    try {
+      doc = await generateInvoiceDocument(data);
+    } catch {
+      setActionError("Impossible de générer le PDF à partager.");
+      return;
+    }
     const result = await sharePDF(doc.output("blob"), fileName, invoice.client, invoice.number, totalFormatted, data.periodStart, data.periodEnd);
     if (result.success || result.method === "cancelled") return;
     doc.save(fileName);
@@ -409,6 +428,9 @@ export default function InvoiceDetailsPage() {
             </button>
 
             {shareNotice && <p className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-center text-xs text-white/80">{shareNotice}</p>}
+            {actionError && (
+              <p className="mt-3 rounded-lg bg-[#c13a3a]/20 px-3 py-2 text-center text-xs font-semibold text-[#ffd9d9]">{actionError}</p>
+            )}
           </aside>
         </div>
       </div>

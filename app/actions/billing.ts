@@ -30,6 +30,8 @@ const clientInputSchema = z.object({
   phone: z.string().trim().max(30).optional(),
   email: z.string().trim().email("Email invalide.").max(200).optional().or(z.literal("")),
   projectName: z.string().trim().max(300).optional(),
+  marketNumber: z.string().trim().max(120).optional(),
+  contractNumber: z.string().trim().max(120).optional(),
   defaultUnitPrice: money,
   hasTva: z.boolean(),
 });
@@ -114,6 +116,8 @@ function mapClient(client: Awaited<ReturnType<typeof prisma.client.findMany>>[nu
     phone: client.phone ?? undefined,
     email: client.email ?? undefined,
     projectName: client.projectName ?? undefined,
+    marketNumber: client.marketNumber ?? undefined,
+    contractNumber: client.contractNumber ?? undefined,
     defaultUnitPrice: Number(client.defaultUnitPrice),
     hasTva: client.hasTva,
     createdByEmail: client.createdByEmail ?? undefined,
@@ -221,6 +225,8 @@ export type DashboardMetrics = {
   paymentRate: number;
   monthInvoiceCount: number;
   monthRevenue: number;
+  /** Month-over-month revenue change, or null when last month had none. */
+  revenueTrendPercent: number | null;
   clientsCount: number;
   overdueCount: number;
   overdueRevenue: number;
@@ -236,18 +242,20 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const startOfPreviousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const dueSoonEnd = new Date(todayStart);
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 8);
 
-  const [totalAgg, paidAgg, sentAgg, draftAgg, monthAgg, overdueAgg, dueSoonCount, clientsCount, overdueInvoices, recentInvoices] =
+  const [totalAgg, paidAgg, sentAgg, draftAgg, monthAgg, previousMonthAgg, overdueAgg, dueSoonCount, clientsCount, overdueInvoices, recentInvoices] =
     await Promise.all([
       prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true }),
       prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true, where: { status: "PAID" } }),
       prisma.invoice.aggregate({ _sum: { totalTtc: true }, where: { status: "SENT" } }),
       prisma.invoice.aggregate({ _sum: { totalTtc: true }, where: { status: "DRAFT" } }),
       prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true, where: { createdAt: { gte: startOfMonth, lt: startOfNextMonth } } }),
+      prisma.invoice.aggregate({ _sum: { totalTtc: true }, where: { createdAt: { gte: startOfPreviousMonth, lt: startOfMonth } } }),
       prisma.invoice.aggregate({ _sum: { totalTtc: true }, _count: true, where: { status: { not: "PAID" }, dueDate: { lt: todayStart } } }),
       prisma.invoice.count({ where: { status: { not: "PAID" }, dueDate: { gte: todayStart, lt: dueSoonEnd } } }),
       prisma.client.count(),
@@ -264,6 +272,8 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   const paidCount = paidAgg._count;
   const sentRevenue = Number(sentAgg._sum.totalTtc ?? 0);
   const draftRevenue = Number(draftAgg._sum.totalTtc ?? 0);
+  const monthRevenue = Number(monthAgg._sum.totalTtc ?? 0);
+  const previousMonthRevenue = Number(previousMonthAgg._sum.totalTtc ?? 0);
 
   return {
     totalRevenue: Number(totalAgg._sum.totalTtc ?? 0),
@@ -276,7 +286,8 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     totalCount,
     paymentRate: totalCount ? Math.round((paidCount / totalCount) * 100) : 0,
     monthInvoiceCount: monthAgg._count,
-    monthRevenue: Number(monthAgg._sum.totalTtc ?? 0),
+    monthRevenue,
+    revenueTrendPercent: previousMonthRevenue > 0 ? Math.round(((monthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100) : null,
     clientsCount,
     overdueCount: overdueAgg._count,
     overdueRevenue: Number(overdueAgg._sum.totalTtc ?? 0),
@@ -297,6 +308,21 @@ export async function getInvoiceCount() {
   await requireUser();
   if ((await prisma.invoice.count()) === 0) await ensureSeeded();
   return prisma.invoice.count();
+}
+
+// The number an invoice will get is owned by a Postgres sequence, not by
+// how many rows exist — deletions and the seeded invoices (which start at
+// N°22) make those two diverge. The creation screen previously previewed
+// `N°{count + 1}`, so a PDF downloaded or shared before saving carried a
+// number that matched nothing in the ledger. Peek at the sequence instead
+// (reading last_value does not consume a value).
+export async function getNextInvoiceNumber() {
+  await requireUser();
+  const [sequence] = await prisma.$queryRaw<{ last_value: bigint; is_called: boolean }[]>`
+    SELECT last_value, is_called FROM facturation.invoice_number_seq
+  `;
+  const next = sequence.is_called ? Number(sequence.last_value) + 1 : Number(sequence.last_value);
+  return `N°${next}`;
 }
 
 export async function getInvoice(invoiceId: string) {
@@ -395,6 +421,8 @@ export async function createClient(input: Omit<ClientRecord, "id">) {
       phone: data.phone || null,
       email: data.email || null,
       projectName: data.projectName || null,
+      marketNumber: data.marketNumber || null,
+      contractNumber: data.contractNumber || null,
       createdByEmail: user.email,
       updatedByEmail: user.email,
     },
@@ -413,6 +441,8 @@ export async function updateClient(client: ClientRecord) {
       phone: data.phone || null,
       email: data.email || null,
       projectName: data.projectName || null,
+      marketNumber: data.marketNumber || null,
+      contractNumber: data.contractNumber || null,
       defaultUnitPrice: amount(data.defaultUnitPrice),
       hasTva: data.hasTva,
       updatedByEmail: user.email,
@@ -482,6 +512,9 @@ export async function updateInvoice(invoice: InvoiceRecord) {
       totalTtc: amount(totals.totalTtc),
       status: statusToDb[data.status],
       updatedByEmail: user.email,
+      // The stored PDF was rendered from the previous values, so drop the
+      // pointer rather than keep offering a stale document for download.
+      pdfPath: null,
       items: existing.items[0]
         ? { update: { where: { id: existing.items[0].id }, data: { designation: data.designation, quantity: amount(data.quantity, 3), unitPrice: amount(data.unitPrice), total: amount(totals.totalHt) } } }
         : { create: { designation: data.designation, quantity: amount(data.quantity, 3), unit: "m³", unitPrice: amount(data.unitPrice), total: amount(totals.totalHt) } },

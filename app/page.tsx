@@ -20,6 +20,7 @@ const emptyMetrics: DashboardMetrics = {
   paymentRate: 0,
   monthInvoiceCount: 0,
   monthRevenue: 0,
+  revenueTrendPercent: null,
   clientsCount: 0,
   overdueCount: 0,
   overdueRevenue: 0,
@@ -42,8 +43,11 @@ export default function Home() {
       helper: `${metrics.paidCount} facture(s) payées`,
       accent: "bg-[#172238] text-white",
       icon: Wallet,
-      trend: "+12,5%",
-      trendTone: "text-[#78c89b]",
+      trend:
+        metrics.revenueTrendPercent === null
+          ? "Ce mois-ci"
+          : `${metrics.revenueTrendPercent >= 0 ? "+" : ""}${metrics.revenueTrendPercent}% vs mois dernier`,
+      trendTone: (metrics.revenueTrendPercent ?? 0) >= 0 ? "text-[#78c89b]" : "text-[#e8a0a0]",
     },
     {
       label: "Factures du mois",

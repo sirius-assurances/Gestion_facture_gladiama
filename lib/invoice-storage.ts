@@ -7,6 +7,8 @@ export type ClientRecord = {
   phone?: string;
   email?: string;
   projectName?: string;
+  marketNumber?: string;
+  contractNumber?: string;
   defaultUnitPrice: number;
   hasTva: boolean;
   createdByEmail?: string;
