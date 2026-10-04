@@ -1,121 +1,107 @@
 # Progression du projet
 
-Dernière mise à jour : 2026-09-24
+Dernière mise à jour : 2026-10-04
 
 ## Objectif
 
-Migrer la gestion des clients et des factures depuis SQLite/localStorage vers PostgreSQL Supabase, avec le schéma PostgreSQL `facturation`.
-
-## Fait
-
-- Remote Git `origin` configuré vers `https://github.com/sirius-assurances/Gestion_facture_gladiama.git`.
-- Audit initial réalisé en lecture seule.
-- ORM identifié : Prisma ORM et Prisma Client `7.10.0`.
-- Schéma Prisma basculé de `sqlite` vers `postgresql`.
-- Namespace PostgreSQL `facturation` ajouté au schéma Prisma.
-- Modèles conservés : `Client`, `Invoice`, `InvoiceItem`.
-- Champ `dueDate` ajouté à `Invoice` pour correspondre à l'interface existante.
-- Numéro de facture rendu unique.
-- Adaptateur Prisma PostgreSQL installé : `@prisma/adapter-pg` et `pg`.
-- Client Prisma PostgreSQL ajouté dans `lib/prisma.ts`.
-- Server Actions ajoutées dans `app/actions/billing.ts` pour :
-  - lire les clients et factures ;
-  - créer et modifier les clients ;
-  - supprimer les clients ;
-  - créer et modifier les factures ;
-  - changer le statut des factures ;
-  - supprimer les factures.
-- Initialisation des données par défaut ajoutée au premier chargement de la base vide.
-- Verrou ajouté pour éviter deux initialisations concurrentes.
-- Les écrans clients et factures utilisent maintenant Prisma via Server Actions.
-- Les écrans applicatifs ne dépendent plus de `localStorage` pour les clients et factures.
-- Migration SQL initiale ajoutée dans `prisma/migrations/0001_init_facturation/migration.sql`.
-- `prisma/migrations/migration_lock.toml` configuré pour PostgreSQL.
-- `.env.example` documente `DATABASE_URL` et `DIRECT_DATABASE_URL` sans secret.
-- La migration `0001_init_facturation` a été appliquée avec succès dans Supabase via le pooler session mode (`:5432`).
-- La migration `0002_precision_indexes` a été appliquée avec succès.
-- Les montants sont maintenant stockés en `Decimal`/`numeric` avec deux décimales.
-- Les quantités sont stockées avec trois décimales.
-- Des index ont été ajoutés sur les clients, relations de factures, statuts, dates et échéances.
-- La génération des numéros de facture est protégée par un verrou transactionnel PostgreSQL.
-- Supabase Auth intégré avec sessions SSR par cookies.
-- Proxy Next.js ajouté pour protéger toutes les routes sauf `/login`.
-- Page de connexion Supabase ajoutée dans `app/login/page.tsx`.
-- Bouton global de déconnexion ajouté.
-- Toutes les Server Actions de facturation vérifient maintenant la session utilisateur.
-- Logo original `public/images/logo-gladiama.png` branché comme logo principal des PDF.
-- `prisma migrate status` confirme que la base Supabase est à jour.
-- Le rôle applicatif a été vérifié en lecture et ses privilèges CRUD sur `Client`, `Invoice` et `InvoiceItem` sont valides.
-- La vérification TypeScript passe après la migration.
-- Prisma Client généré avec succès.
-- ESLint, TypeScript et le build Next.js ont été validés avant l'ajout de la migration SQL finale.
+Application de facturation GLADIAMA SUARL : gestion des clients, des factures
+et génération des PDF, sur PostgreSQL Supabase (schéma `facturation`),
+déployée sur Vercel.
 
 ## État actuel
 
-- La base Supabase est joignable via le pooler session mode et le schéma `facturation` est initialisé.
-- La cible confirmée est le projet Supabase existant, avec un nouveau schéma PostgreSQL `facturation`.
-- Le schéma `facturation` et le rôle applicatif dédié ont été créés dans Supabase.
-- Le rôle applicatif possède `USAGE` sur `facturation` et un `search_path` configuré vers ce schéma.
-- `DATABASE_URL` local pointe maintenant vers le pooler Supabase du rôle applicatif, avec `schema=facturation`.
-- Les informations de connexion ne sont pas enregistrées dans ce fichier de suivi.
-- Le fichier `.env` local contient les connexions Supabase runtime et migration, sans être suivi par Git.
-- Les variables Auth `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` doivent être ajoutées dans `.env`.
-- Les variables Auth Supabase sont maintenant configurées localement.
-- La migration SQL initiale est appliquée à Supabase.
-- Aucun système d'authentification n'est encore configuré.
-- Les PDF et images restent générés/téléchargés côté navigateur et stockés dans `public/images`.
+L'application est **en production et fonctionnelle**. Base Supabase à jour
+(5 migrations appliquées), authentification Supabase par cookies, deux comptes
+utilisateurs aux droits identiques.
 
-## À faire
+Qualité : 46 tests unitaires, 6 tests d'intégration (vraie base), 7 tests E2E
+(vrai navigateur), et un CI GitHub Actions qui exécute tout à chaque push.
 
-1. Pour les prochaines migrations, conserver une connexion administrateur dans `DIRECT_DATABASE_URL`, avec `schema=facturation`.
-2. Appliquer les prochaines migrations :
+## Démarrer
 
-   ```bash
-   npx prisma migrate deploy
-   ```
+```bash
+npm run dev          # ⚠️ voir le piège des ports ci-dessous
+npm test             # tests unitaires (rapides, sans base)
+npm run test:e2e     # E2E Playwright (nécessite E2E_EMAIL / E2E_PASSWORD)
 
-3. Vérifier les droits du rôle applicatif sur les tables créées par la migration :
+npm run test:db:up        # Postgres jetable (Docker)
+npm run test:db:prepare    # applique les migrations dessus
+npm run test:integration   # tests d'intégration
+npm run test:db:down       # arrête et supprime la base de test
+```
 
-   ```sql
-   grant select, insert, update, delete on all tables in schema facturation to facturation_app;
-   grant usage, select on all sequences in schema facturation to facturation_app;
-   ```
+## Pièges connus (chèrement acquis)
 
-4. Lancer l'application et tester les parcours suivants :
-   - tableau de bord ;
-   - création, modification et suppression d'un client ;
-   - création d'une facture ;
-   - modification du statut d'une facture ;
-   - modification et suppression d'une facture ;
-   - génération et partage d'un PDF.
-5. Régénérer Prisma après toute modification de `prisma/schema.prisma` :
+- **Port de dev** : une autre application de la machine (BILMS) occupe le port
+  3000. Next se décale alors sur **3001**. Vérifier le titre de la page avant
+  de conclure à un bug d'authentification : se connecter à la mauvaise
+  application donne « Invalid email or password ».
+- **PDF sur Safari iOS** : Safari n'affiche pas de PDF dans une iframe, et ne
+  résout pas une URL `blob:` créée dans un autre onglet (page blanche). D'où
+  l'upload vers Supabase Storage puis l'ouverture d'une URL signée `https`.
+  De plus `window.open()` doit être appelé **avant** tout `await`, sinon
+  Safari le bloque comme pop-up.
+- **Migration 0005** touche le schéma `storage` propre à Supabase. Elle ne
+  peut pas être modifiée (empreinte déjà enregistrée en production) : la base
+  de test reçoit un stub via `scripts/prepare-test-db.mjs`.
+- **CI** : `tsconfig` inclut `.next/types`, généré par Next. Sur un checkout
+  propre il faut `npx next typegen` avant `tsc`, sinon `LayoutProps` est
+  introuvable.
+- **Auth Supabase** : enchaîner les connexions déclenche une limitation de
+  débit. Les E2E se connectent une seule fois et réutilisent la session.
+- **Seed de démo** : désactivé par défaut, derrière `ENABLE_DEMO_SEED=1`.
+  Ne jamais l'activer sur une base contenant de vraies factures.
 
-   ```bash
-   npm run db:generate
-   ```
+## Incident de production (octobre 2026)
 
-7. Créer le premier utilisateur dans Supabase Authentication.
-8. Décider si les logos/PDF doivent migrer vers Supabase Storage.
-9. Ajouter des tests d'intégration pour les Server Actions et les relations Prisma.
-10. Prévoir Node.js 22+ pour suivre la version supportée par `@supabase/supabase-js`.
+Les factures **avec TVA** ne pouvaient être ni téléchargées ni visualisées.
+La table du PDF déclarait 4 en-têtes mais seulement 4 bornes de colonnes au
+lieu de 5 : la dernière coordonnée valait `NaN` et jsPDF rejetait tout le
+document. Les factures sans TVA fonctionnaient, ce qui a masqué le problème.
+
+Deux défauts connexes falsifiaient les documents envoyés aux clients :
+le numéro prévisualisé venait du nombre de lignes (N°4) au lieu de la séquence
+Postgres (N°26), et les références marché/contrat étaient codées en dur avec
+celles d'un seul client pour toutes les factures.
+
+Ces trois défauts sont corrigés, vérifiés sur la base réelle, et couverts par
+des tests.
+
+## Reste à faire
+
+1. Exécuter les E2E dans le CI (nécessite une instance accessible et des
+   identifiants de test en secrets GitHub).
+2. Le test E2E `invoice-lifecycle.spec.ts` est ignoré par défaut : il crée une
+   facture et consommerait un numéro du registre réel. L'activer avec
+   `E2E_ALLOW_WRITES=1` contre une base jetable.
+3. Le numéro affiché avant enregistrement reste une prédiction : deux
+   créations simultanées pourraient produire un PDF au numéro déjà pris. Le
+   correctif complet serait d'enregistrer avant d'autoriser le téléchargement.
+4. Cosmétique : 3 avertissements ESLint `<img>` vs `next/image`, et le champ
+   `defaultProduct` présent en base mais inutilisé.
+5. Latent, sans impact à deux utilisateurs : plafond ~1 Mo sur l'upload PDF
+   (base64 via Server Action), liste client du menu déroulant non paginée,
+   pas de limitation de débit applicative.
 
 ## Fichiers principaux
 
-- `prisma/schema.prisma` : modèle PostgreSQL et schéma `facturation`.
-- `prisma7.config.ts` : configuration Prisma et URL directe pour les migrations.
-- `lib/prisma.ts` : singleton Prisma avec l'adaptateur PostgreSQL.
-- `app/actions/billing.ts` : accès serveur aux clients et factures.
-- `lib/invoice-storage.ts` : types UI et fonctions de calcul encore partagées.
-- `prisma/migrations/0001_init_facturation/migration.sql` : migration initiale.
-- `.env.example` : noms et formats attendus des variables, sans secret.
-- `.env` : configuration locale Supabase à compléter, fichier ignoré par Git.
-- `lib/supabase/client.ts` et `lib/supabase/server.ts` : clients Supabase Auth.
-- `proxy.ts` : renouvellement de session et protection des routes.
-- `app/login/page.tsx` : connexion utilisateur.
+- `app/actions/billing.ts` : toutes les Server Actions (lecture, écriture,
+  pagination, métriques du tableau de bord, PDF). Chacune vérifie la session.
+- `lib/invoice.ts` : modèle métier (types, statuts, échéances).
+- `lib/invoice-totals.ts` : **seule** implémentation du calcul des totaux.
+- `lib/company.ts` : coordonnées de l'entreprise imprimées sur les documents.
+- `lib/pdf/generator.ts` et `lib/pdf/layout.ts` : génération et géométrie du PDF.
+- `lib/seed-data.ts` : données de démonstration (seed désactivé par défaut).
+- `prisma/schema.prisma` + `prisma/migrations/` : schéma et historique.
+- `proxy.ts` : protection des routes, renouvellement de session.
+- `.github/workflows/ci.yml` : pipeline de vérification.
 
 ## Consignes de reprise
 
 - Ne jamais committer `.env` ni afficher les valeurs des URLs Supabase.
-- Utiliser `DATABASE_URL` pour l'application et `DIRECT_DATABASE_URL` pour les migrations Prisma.
-- Ne pas réintroduire les accès Prisma dans les composants client.
-- Après toute modification du schéma, lancer `npm run db:generate`, puis vérifier TypeScript et le build.
+- `DATABASE_URL` pour l'application, `DIRECT_DATABASE_URL` pour les migrations.
+- Ne pas réintroduire d'accès Prisma dans les composants client.
+- Après toute modification du schéma : `npm run db:generate`, puis typecheck
+  et build.
+- Les totaux sont **toujours** recalculés côté serveur : ne jamais faire
+  confiance aux montants envoyés par le client.
