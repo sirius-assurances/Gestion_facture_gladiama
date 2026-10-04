@@ -4,14 +4,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatFrenchDate } from "@/lib/format";
-import {
-  defaultClients,
-  defaultInvoices,
-  TVA_RATE_PERCENT,
-  type ClientRecord,
-  type InvoiceRecord,
-  type InvoiceStatus,
-} from "@/lib/invoice-storage";
+import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
+import { defaultClients, defaultInvoices } from "@/lib/seed-data";
+import type { ClientRecord, InvoiceRecord, InvoiceStatus } from "@/lib/invoice";
 
 const statusToDb: Record<InvoiceStatus, "DRAFT" | "SENT" | "PAID"> = {
   Brouillon: "DRAFT",
@@ -100,12 +95,6 @@ function dateToInput(value: Date) {
 
 function amount(value: number, decimals = 2) {
   return value.toFixed(decimals);
-}
-
-function computeTotals(quantity: number, unitPrice: number, hasTva: boolean) {
-  const totalHt = quantity * unitPrice;
-  const totalTva = hasTva ? totalHt * (TVA_RATE_PERCENT / 100) : 0;
-  return { totalHt, totalTva, totalTtc: totalHt + totalTva };
 }
 
 function mapClient(client: Awaited<ReturnType<typeof prisma.client.findMany>>[number]): ClientRecord {
@@ -199,7 +188,14 @@ async function seedDatabase() {
   }
 }
 
+// Seeding inserts the demo clients and invoices N°22–24. It used to run
+// automatically whenever a table came back empty, which on a real ledger
+// would silently resurrect fake invoices. It now only runs when explicitly
+// enabled for a fresh or disposable database.
+const demoSeedEnabled = process.env.ENABLE_DEMO_SEED === "1";
+
 async function ensureSeeded() {
+  if (!demoSeedEnabled) return;
   if (seedPromise) return seedPromise;
   seedPromise = seedDatabase().finally(() => {
     seedPromise = null;
@@ -353,7 +349,10 @@ export async function saveInvoicePdf(invoiceId: string, pdfBase64: string) {
   if (!invoice) throw new Error("Facture introuvable.");
 
   const supabase = await createSupabaseServerClient();
-  const path = `${id}.pdf`;
+  // Named after the invoice rather than its uuid: this filename is what the
+  // browser offers when saving the PDF opened from the signed URL, and
+  // "3e651cf1-455a-….pdf" is not something anyone can file.
+  const path = `facture-${invoice.invoiceNumber.replace(/[^a-z0-9]/gi, "-")}.pdf`;
   const { error } = await supabase.storage
     .from(PDF_BUCKET)
     .upload(path, Buffer.from(base64, "base64"), { contentType: "application/pdf", upsert: true });
@@ -465,7 +464,7 @@ export async function createInvoice(input: Omit<InvoiceRecord, "id" | "number" |
     : await prisma.client.findFirst({ where: { name: data.client } });
   if (!client) throw new Error("Client introuvable.");
 
-  const totals = computeTotals(data.quantity, data.unitPrice, data.hasTva);
+  const totals = computeInvoiceTotals(data.quantity, data.unitPrice, data.hasTva);
 
   await prisma.$transaction(async (transaction) => {
     const [{ nextval }] = await transaction.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('facturation.invoice_number_seq') AS nextval`;
@@ -497,7 +496,7 @@ export async function updateInvoice(invoice: InvoiceRecord) {
   if (!client) throw new Error("Client introuvable.");
   const existing = await prisma.invoice.findUnique({ where: { id: data.id }, include: { items: true } });
   if (!existing) throw new Error("Facture introuvable.");
-  const totals = computeTotals(data.quantity, data.unitPrice, data.hasTva);
+  const totals = computeInvoiceTotals(data.quantity, data.unitPrice, data.hasTva);
   await prisma.invoice.update({
     where: { id: data.id },
     data: {

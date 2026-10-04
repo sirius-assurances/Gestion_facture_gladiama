@@ -1,0 +1,17 @@
+# Throwaway Postgres for the integration tests. Never point these at the
+# Supabase project: the tests create and delete invoices, which would
+# consume numbers from the real ledger's sequence.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gladiama
+      POSTGRES_PASSWORD: gladiama
+      POSTGRES_DB: gladiama_test
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gladiama -d gladiama_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

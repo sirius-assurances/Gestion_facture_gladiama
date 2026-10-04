@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
 import { getClient, updateClient } from "@/app/actions/billing";
-import type { ClientRecord } from "@/lib/invoice-storage";
+import type { ClientRecord } from "@/lib/invoice";
 
 export default function ClientEditPage() {
   const params = useParams();

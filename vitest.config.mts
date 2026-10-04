@@ -5,9 +5,11 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.ts"],
-    // e2e/ is Playwright's; it uses *.spec.ts so it never matches here, but
-    // keep it excluded so a stray *.test.ts there can't be picked up either.
-    exclude: ["node_modules", ".next", "app/generated", "e2e"],
+    // e2e/ is Playwright's, and integration/ needs the disposable Postgres
+    // from docker-compose.test.yml — neither belongs in the fast unit run
+    // (integration/*.test.ts would otherwise match the include pattern and
+    // fail wherever no database is up).
+    exclude: ["node_modules", ".next", "app/generated", "e2e", "integration"],
   },
   resolve: {
     alias: {

@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowUpRight, Bell, ChevronRight, CircleDollarSign, Cloc
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
 import { getDashboardMetrics, type DashboardMetrics } from "@/app/actions/billing";
-import { invoiceStatusStyles } from "@/lib/invoice-storage";
+import { invoiceStatusStyles } from "@/lib/invoice";
 import { formatCfa } from "@/lib/format";
 
 const emptyMetrics: DashboardMetrics = {

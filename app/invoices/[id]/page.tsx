@@ -11,10 +11,10 @@ import {
   getInvoiceDueDate,
   invoiceStatusMeta,
   invoiceStatusOrder,
-  TVA_RATE_PERCENT,
   type ClientRecord,
   type InvoiceRecord,
-} from "@/lib/invoice-storage";
+} from "@/lib/invoice";
+import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
@@ -37,12 +37,13 @@ export default function InvoiceDetailsPage() {
     void loadInvoice();
   }, [params.id]);
 
-  const totals = useMemo(() => {
-    if (!invoice) return { totalHt: 0, totalTva: 0, totalTtc: 0 };
-    const totalHt = invoice.quantity * invoice.unitPrice;
-    const totalTva = invoice.hasTva ? totalHt * (TVA_RATE_PERCENT / 100) : 0;
-    return { totalHt, totalTva, totalTtc: totalHt + totalTva };
-  }, [invoice]);
+  const totals = useMemo(
+    () =>
+      invoice
+        ? computeInvoiceTotals(invoice.quantity, invoice.unitPrice, invoice.hasTva)
+        : { totalHt: 0, totalTva: 0, totalTtc: 0 },
+    [invoice],
+  );
 
   if (!invoice) {
     return (

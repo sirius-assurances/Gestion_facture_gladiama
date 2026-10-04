@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, Pencil, Plus, Search, Tra
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
 import { getClientsPage, removeClient } from "@/app/actions/billing";
-import type { ClientRecord } from "@/lib/invoice-storage";
+import type { ClientRecord } from "@/lib/invoice";
 
 const PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { createInvoice, getClients, getNextInvoiceNumber } from "@/app/actions/billing";
-import { TVA_RATE_PERCENT, type ClientRecord } from "@/lib/invoice-storage";
+import type { ClientRecord } from "@/lib/invoice";
+import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
@@ -42,11 +43,10 @@ export default function InvoiceForm() {
     void loadForm();
   }, [searchParams]);
 
-  const totals = useMemo(() => {
-    const totalHt = Math.max(0, quantity) * Math.max(0, unitPrice);
-    const totalTva = hasTva ? totalHt * (TVA_RATE_PERCENT / 100) : 0;
-    return { totalHt, totalTva, totalTtc: totalHt + totalTva };
-  }, [hasTva, quantity, unitPrice]);
+  const totals = useMemo(
+    () => computeInvoiceTotals(quantity, unitPrice, hasTva),
+    [hasTva, quantity, unitPrice],
+  );
 
   function handleClientChange(name: string) {
     const client = clients.find((item) => item.name === name);

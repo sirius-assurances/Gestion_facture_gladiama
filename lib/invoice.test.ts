@@ -4,7 +4,7 @@ import {
   getInvoiceDueDate,
   getNextInvoiceStatus,
   isInvoiceOverdue,
-} from "@/lib/invoice-storage";
+} from "@/lib/invoice";
 
 describe("getInvoiceDueDate", () => {
   it("returns the explicit dueDate when set", () => {

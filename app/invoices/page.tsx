@@ -14,7 +14,7 @@ import {
   invoiceStatusStyles,
   type InvoiceRecord,
   type InvoiceStatus,
-} from "@/lib/invoice-storage";
+} from "@/lib/invoice";
 
 const filterOptions: Array<"Toutes" | InvoiceStatus> = ["Toutes", "Brouillon", "Envoyée", "Payée"];
 const PAGE_SIZE = 15;

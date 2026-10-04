@@ -1,8 +1,9 @@
 import jsPDF from "jspdf";
 import { numberToFrenchWords } from "@/lib/pdf/number-to-words";
 import { formatCfa, formatFrenchDate, formatGroupedNumber } from "@/lib/format";
-import { TVA_RATE_PERCENT } from "@/lib/invoice-storage";
+import { TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { getInvoiceTableLayout } from "@/lib/pdf/layout";
+import { COMPANY } from "@/lib/company";
 
 export type InvoicePdfData = {
   invoiceNumber: string;
@@ -231,8 +232,8 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
     doc.rect(20, 278, 170, 12, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(8);
-    doc.text("Cité Soleil Dalifort Villa N°38 - Tél: +221 77 704 37 90", 105, 284, { align: "center" });
-    doc.text("N.I.N.E.A : 009384629 - RC N° SN.DKR.2022.B.14972", 105, 288, { align: "center" });
+    doc.text(`${COMPANY.address} - Tél: ${COMPANY.phone}`, 105, 284, { align: "center" });
+    doc.text(`N.I.N.E.A : ${COMPANY.ninea} - RC N° ${COMPANY.rc}`, 105, 288, { align: "center" });
   }
 
   return doc;

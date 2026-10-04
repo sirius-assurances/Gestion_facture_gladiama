@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gladiama
+          POSTGRES_PASSWORD: gladiama
+          POSTGRES_DB: gladiama_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gladiama -d gladiama_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The Prisma client is generated into app/generated and git-ignored,
+      # so nothing typechecks or builds until it exists.
+      - run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Unit tests
+        run: npm test
+
+      # Replays the real migration history against a throwaway Postgres, so
+      # numbering, cascades and decimal precision are checked against an
+      # actual database rather than mocks.
+      - name: Integration tests
+        run: npm run test:db:prepare && npm run test:integration
+        env:
+          TEST_DATABASE_URL: postgresql://gladiama:gladiama@localhost:5432/gladiama_test?schema=facturation
+
+      # Placeholder values only. The build never opens a connection — it just
+      # needs the variables present, since the Prisma client and the Supabase
+      # browser client both throw when they are missing.
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/postgres
+          DIRECT_DATABASE_URL: postgresql://user:password@localhost:5432/postgres
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
