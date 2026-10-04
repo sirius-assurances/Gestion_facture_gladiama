@@ -218,13 +218,20 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
     doc.setFont("helvetica", "normal");
     doc.text(amountLines, 20, amountY);
   }
+  // The signature block follows the amount line instead of sitting at a
+  // fixed y: anchored, the gap was 31mm on an invoice with VAT and 40mm
+  // without, leaving an inconsistent hole above the signature. Capped at the
+  // old position so it can only ever move up, never down into the footer.
+  const SIGNATURE_GAP = 20;
+  const signatureY = Math.min(252, amountY + SIGNATURE_GAP);
+
   doc.setTextColor(...colors.red);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text("LE DIRECTEUR GENERAL", 190, 252, { align: "right" });
+  doc.text("LE DIRECTEUR GENERAL", 190, signatureY, { align: "right" });
   const signatureWidth = doc.getTextWidth("LE DIRECTEUR GENERAL");
-  doc.line(190 - signatureWidth, 253, 190, 253);
-  if (stamp) doc.addImage(stamp, "PNG", 142, 258, 40, 21.2);
+  doc.line(190 - signatureWidth, signatureY + 1, 190, signatureY + 1);
+  if (stamp) doc.addImage(stamp, "PNG", 142, signatureY + 6, 40, 21.2);
 
   if (footer) doc.addImage(footer, "PNG", 20, 278, 170, 9);
   else {
