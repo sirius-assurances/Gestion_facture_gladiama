@@ -39,6 +39,13 @@ jobs:
       # so nothing typechecks or builds until it exists.
       - run: npx prisma generate
 
+      # tsconfig pulls in .next/types, where Next generates LayoutProps and
+      # friends. Those only exist after a dev run or a build, so on a clean
+      # checkout tsc fails on "Cannot find name 'LayoutProps'". typegen
+      # produces them without paying for a full build.
+      - name: Generate route types
+        run: npx next typegen
+
       - name: Typecheck
         run: npx tsc --noEmit
 
