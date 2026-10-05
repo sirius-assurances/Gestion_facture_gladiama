@@ -3,6 +3,7 @@ import {
   getInvoiceDaysUntilDue,
   getInvoiceDueDate,
   getNextInvoiceStatus,
+  isInvoiceIssued,
   isInvoiceOverdue,
 } from "@/lib/invoice";
 
@@ -65,5 +66,22 @@ describe("getNextInvoiceStatus", () => {
 
   it("keeps Payée as a terminal state", () => {
     expect(getNextInvoiceStatus("Payée")).toBe("Payée");
+  });
+});
+
+// This rule decides whether an invoice's content can still be changed, so
+// getting it wrong either blocks ordinary editing or lets an invoice the
+// client already holds be rewritten underneath them.
+describe("isInvoiceIssued", () => {
+  it("leaves a draft editable", () => {
+    expect(isInvoiceIssued("Brouillon")).toBe(false);
+  });
+
+  it("locks an invoice once it has gone to the client", () => {
+    expect(isInvoiceIssued("Envoyée")).toBe(true);
+  });
+
+  it("locks a paid invoice", () => {
+    expect(isInvoiceIssued("Payée")).toBe(true);
   });
 });

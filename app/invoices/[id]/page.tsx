@@ -4,14 +4,24 @@ import Link from "next/link";
 import { ArrowLeft, Download, ExternalLink, Eye, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { getClients, getInvoice, getInvoicePdfUrl, saveInvoicePdf, updateInvoice } from "@/app/actions/billing";
+import {
+  getClients,
+  getInvoice,
+  getInvoicePdfUrl,
+  saveInvoicePdf,
+  updateInvoice,
+  updateInvoiceStatus as updateInvoiceStatusInDatabase,
+} from "@/app/actions/billing";
 import {
   getNextInvoiceStatus,
   getInvoiceDueDate,
   invoiceStatusMeta,
   invoiceStatusOrder,
+  INVOICE_ISSUED_MESSAGE,
+  isInvoiceIssued,
   type ClientRecord,
   type InvoiceRecord,
+  type InvoiceStatus,
 } from "@/lib/invoice";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
@@ -58,9 +68,31 @@ export default function InvoiceDetailsPage() {
     setInvoice((current) => (current ? { ...current, [key]: value } : current));
   };
 
+  // An invoice past "Brouillon" has gone to the client; its content is frozen
+  // (see isInvoiceIssued).
+  const issued = isInvoiceIssued(invoice.status);
+
   const handleSave = async () => {
-    await updateInvoice({ ...invoice, totalHt: totals.totalHt, totalTva: totals.totalTva, totalTtc: totals.totalTtc });
+    setActionError("");
+    try {
+      await updateInvoice({ ...invoice, totalHt: totals.totalHt, totalTva: totals.totalTva, totalTtc: totals.totalTtc });
+    } catch (error) {
+      // Carries the server's own wording, which explains how to unlock the
+      // invoice — a generic "échec" would leave the user stuck.
+      setActionError(error instanceof Error ? error.message : "Enregistrement impossible.");
+      return;
+    }
     router.push("/invoices");
+  };
+
+  const changeStatus = async (status: InvoiceStatus) => {
+    setActionError("");
+    try {
+      await updateInvoiceStatusInDatabase(invoice.number, status);
+      updateField("status", status);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Changement de statut impossible.");
+    }
   };
 
   const getPdfData = (): InvoicePdfData => {
@@ -177,10 +209,7 @@ export default function InvoiceDetailsPage() {
     window.setTimeout(() => setShareNotice(""), 5000);
   };
 
-  const moveToNextStatus = () => {
-    const nextStatus = getNextInvoiceStatus(invoice.status);
-    updateField("status", nextStatus);
-  };
+  const moveToNextStatus = () => changeStatus(getNextInvoiceStatus(invoice.status));
 
   return (
     <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:px-12 lg:py-10 lg:pb-10">
@@ -210,7 +239,19 @@ export default function InvoiceDetailsPage() {
 
         <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
           <section className="rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7] p-5 sm:p-7">
-            <div className="grid gap-5 sm:grid-cols-2">
+            {issued && (
+              <p className="mb-5 rounded-xl border border-[#e8712b]/30 bg-[#e8712b]/5 p-4 text-sm text-[#172238]">
+                <span className="font-semibold">Facture émise, non modifiable.</span> Le client détient un document
+                portant ce numéro et ces montants. Pour la corriger, repassez-la en brouillon : le document envoyé sera
+                archivé avant toute nouvelle version.
+              </p>
+            )}
+
+            {/* One disabled fieldset rather than a flag on each control: the
+                browser disables every descendant, so a field added later is
+                locked too instead of quietly staying editable. */}
+            <fieldset className="disabled:opacity-60" disabled={issued}>
+              <div className="grid gap-5 sm:grid-cols-2">
               <label className="block sm:col-span-2">
                 <span className="mb-2 block text-sm font-semibold">Client</span>
                 <select
@@ -298,25 +339,32 @@ export default function InvoiceDetailsPage() {
                 />
               </label>
 
-              <div className="block sm:col-span-2">
-                <span className="mb-2 block text-sm font-semibold">Statut</span>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {invoiceStatusOrder.map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      className={`rounded-xl border px-3 py-3 text-left text-sm transition ${
-                        invoice.status === status
-                          ? invoiceStatusMeta[status].accent
-                          : "border-[#e4e3dd] bg-white text-[#172238] hover:border-[#d9d8d1]"
-                      }`}
-                      onClick={() => updateField("status", status)}
-                    >
-                      <div className="font-semibold">{invoiceStatusMeta[status].label}</div>
-                      <div className="mt-1 text-[11px] opacity-80">{invoiceStatusMeta[status].description}</div>
-                    </button>
-                  ))}
-                </div>
+              </div>
+            </fieldset>
+
+            {/* Deliberately outside the disabled fieldset: changing the status
+                is how an issued invoice is unlocked for correction, so locking
+                it away with the rest would be a dead end. It also saves on the
+                spot through its own action rather than the full update, which
+                refuses issued invoices. */}
+            <div className="mt-5 block sm:col-span-2">
+              <span className="mb-2 block text-sm font-semibold">Statut</span>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {invoiceStatusOrder.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    className={`rounded-xl border px-3 py-3 text-left text-sm transition ${
+                      invoice.status === status
+                        ? invoiceStatusMeta[status].accent
+                        : "border-[#e4e3dd] bg-white text-[#172238] hover:border-[#d9d8d1]"
+                    }`}
+                    onClick={() => changeStatus(status)}
+                  >
+                    <div className="font-semibold">{invoiceStatusMeta[status].label}</div>
+                    <div className="mt-1 text-[11px] opacity-80">{invoiceStatusMeta[status].description}</div>
+                  </button>
+                ))}
               </div>
             </div>
           </section>
@@ -374,8 +422,10 @@ export default function InvoiceDetailsPage() {
             </button>
 
             <button
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#e8712b] px-5 py-3 text-sm font-semibold text-white hover:bg-[#d86322]"
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#e8712b] px-5 py-3 text-sm font-semibold text-white hover:bg-[#d86322] disabled:cursor-not-allowed disabled:opacity-50"
               type="button"
+              disabled={issued}
+              title={issued ? INVOICE_ISSUED_MESSAGE : undefined}
               onClick={handleSave}
             >
               <Save size={17} /> Enregistrer les modifications

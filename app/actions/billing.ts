@@ -7,7 +7,7 @@ import { formatFrenchDate } from "@/lib/format";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { defaultClients, defaultInvoices } from "@/lib/seed-data";
 import { generateInvoicePdfBuffer } from "@/lib/pdf/server";
-import type { ClientRecord, InvoiceRecord, InvoiceStatus } from "@/lib/invoice";
+import { INVOICE_ISSUED_MESSAGE, isInvoiceIssued, type ClientRecord, type InvoiceRecord, type InvoiceStatus } from "@/lib/invoice";
 
 const statusToDb: Record<InvoiceStatus, "DRAFT" | "SENT" | "PAID"> = {
   Brouillon: "DRAFT",
@@ -346,19 +346,45 @@ function pdfPathFor(invoiceNumber: string) {
 }
 
 /**
+ * Copies an issued invoice's PDF aside before it can be regenerated, under a
+ * timestamped name so repeated corrections each keep their own trace.
+ *
+ * Best-effort on purpose: failing to archive must not block the user from
+ * correcting an invoice, and the copy is a safety net rather than something
+ * the app reads back.
+ */
+async function archiveInvoicePdf(pdfPath: string, invoiceNumber: string) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.storage
+    .from(PDF_BUCKET)
+    .copy(pdfPath, `archives/${pdfPathFor(invoiceNumber).replace(/\.pdf$/, "")}-${stamp}.pdf`);
+  if (error) console.error(`Archivage du PDF ${pdfPath} impossible : ${error.message}`);
+}
+
+/**
  * Uploads the bytes to the private bucket and records the path on the
  * invoice. Shared by the browser-generated and server-generated routes so
  * the two can't file the same invoice under different names.
+ *
+ * Refuses to replace the document of an invoice that has already been
+ * issued: that file is what the client holds, and overwriting it would
+ * destroy the only evidence of what was actually sent.
  */
-async function storeInvoicePdf(invoiceId: string, invoiceNumber: string, bytes: Buffer) {
+async function storeInvoicePdf(
+  invoice: { id: string; invoiceNumber: string; status: "DRAFT" | "SENT" | "PAID"; pdfPath: string | null },
+  bytes: Buffer,
+) {
+  if (invoice.pdfPath && isInvoiceIssued(statusFromDb[invoice.status])) return invoice.pdfPath;
+
   const supabase = await createSupabaseServerClient();
-  const path = pdfPathFor(invoiceNumber);
+  const path = pdfPathFor(invoice.invoiceNumber);
   const { error } = await supabase.storage
     .from(PDF_BUCKET)
     .upload(path, bytes, { contentType: "application/pdf", upsert: true });
   if (error) throw new Error(`Échec de l'enregistrement du PDF : ${error.message}`);
 
-  await prisma.invoice.update({ where: { id: invoiceId }, data: { pdfPath: path } });
+  await prisma.invoice.update({ where: { id: invoice.id }, data: { pdfPath: path } });
   return path;
 }
 
@@ -373,7 +399,7 @@ export async function saveInvoicePdf(invoiceId: string, pdfBase64: string) {
   const invoice = await prisma.invoice.findUnique({ where: { id } });
   if (!invoice) throw new Error("Facture introuvable.");
 
-  await storeInvoicePdf(id, invoice.invoiceNumber, Buffer.from(base64, "base64"));
+  await storeInvoicePdf(invoice, Buffer.from(base64, "base64"));
 }
 
 /**
@@ -409,7 +435,7 @@ export async function generateAndStoreInvoicePdf(invoiceId: string) {
     totalTtc: Number(invoice.totalTtc),
   });
 
-  return storeInvoicePdf(id, invoice.invoiceNumber, pdf);
+  return storeInvoicePdf(invoice, pdf);
 }
 
 export async function getInvoicePdfUrl(invoiceId: string) {
@@ -547,6 +573,9 @@ export async function updateInvoice(invoice: InvoiceRecord) {
   if (!client) throw new Error("Client introuvable.");
   const existing = await prisma.invoice.findUnique({ where: { id: data.id }, include: { items: true } });
   if (!existing) throw new Error("Facture introuvable.");
+  // Checked against the stored status, not the one in the payload: otherwise
+  // the caller could lift its own restriction simply by sending "Brouillon".
+  if (isInvoiceIssued(statusFromDb[existing.status])) throw new Error(INVOICE_ISSUED_MESSAGE);
   const totals = computeInvoiceTotals(data.quantity, data.unitPrice, data.hasTva);
   await prisma.invoice.update({
     where: { id: data.id },
@@ -576,6 +605,17 @@ export async function updateInvoiceStatus(invoiceNumber: string, status: Invoice
   const user = await requireUser();
   const number = z.string().min(1).parse(invoiceNumber);
   const nextStatus = invoiceStatusSchema.parse(status);
+  const existing = await prisma.invoice.findUnique({ where: { invoiceNumber: number } });
+  if (!existing) throw new Error("Facture introuvable.");
+
+  // Putting an issued invoice back to draft is the one sanctioned way to
+  // correct it, and it reopens the document to being regenerated at the same
+  // path. Copy the issued version aside first: it is what the client holds,
+  // and after this it is the only record of it.
+  if (nextStatus === "Brouillon" && isInvoiceIssued(statusFromDb[existing.status]) && existing.pdfPath) {
+    await archiveInvoicePdf(existing.pdfPath, existing.invoiceNumber);
+  }
+
   await prisma.invoice.update({ where: { invoiceNumber: number }, data: { status: statusToDb[nextStatus], updatedByEmail: user.email } });
 }
 

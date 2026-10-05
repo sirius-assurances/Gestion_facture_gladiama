@@ -106,3 +106,20 @@ export const invoiceStatusStyles: Record<InvoiceStatus, string> = Object.fromEnt
 export function getNextInvoiceStatus(status: InvoiceStatus): InvoiceStatus {
   return invoiceStatusMeta[status].next;
 }
+
+/**
+ * A draft is still ours to change. Anything beyond it has been issued: the
+ * client holds a document bearing this number and these amounts, so editing
+ * it in place would leave two different invoices under one number, with no
+ * record of what was actually sent — the exact thing you need if a client
+ * ever disputes a line.
+ *
+ * Correcting an issued invoice is therefore a deliberate act: put it back to
+ * "Brouillon" first, which archives the document the client received.
+ */
+export function isInvoiceIssued(status: InvoiceStatus): boolean {
+  return status !== "Brouillon";
+}
+
+export const INVOICE_ISSUED_MESSAGE =
+  "Cette facture a déjà été émise. Repassez-la en brouillon pour la corriger — le document envoyé au client sera archivé.";
