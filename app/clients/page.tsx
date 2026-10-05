@@ -19,14 +19,25 @@ export default function ClientsPage() {
   // Bumped after a mutation to re-run the fetch effect below without
   // calling it imperatively.
   const [reloadToken, setReloadToken] = useState(0);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Without this the list claims "aucun client trouvé" while it is still
+  // loading, which reads as an empty address book rather than a wait.
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     async function loadPage() {
+      setLoading(true);
       const result = await getClientsPage({ page, pageSize: PAGE_SIZE, search: search || undefined });
+      if (!active) return;
       setClients(result.clients);
       setTotal(result.total);
+      setLoading(false);
     }
     void loadPage();
+    return () => {
+      active = false;
+    };
   }, [page, search, reloadToken]);
 
   // Debounce the search box so we don't hit the server on every keystroke.
@@ -41,6 +52,7 @@ export default function ClientsPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleDelete = async (clientId: string) => {
+    setPendingDelete(null);
     await removeClient(clientId);
     if (clients.length === 1 && page > 1) setPage(page - 1);
     else setReloadToken((token) => token + 1);
@@ -97,22 +109,45 @@ export default function ClientsPage() {
                 </p>
               </div>
 
-              <div className="mt-5 flex items-center gap-2">
-                <Link className="flex-1 rounded-xl border border-[#e4e3dd] bg-white px-3 py-2 text-center text-sm font-semibold text-[#172238] hover:border-[#d9d8d1]" href={`/clients/${client.id}`}>
-                  <span className="inline-flex items-center gap-2">
-                    <Pencil size={14} /> Modifier
-                  </span>
-                </Link>
-                <button
-                  className="rounded-xl border border-[#f0d2d2] bg-[#fff8f8] p-2.5 text-[#c13a3a] hover:bg-[#ffeaea]"
-                  type="button"
-                  onClick={() => handleDelete(client.id)}
-                  aria-label={`Supprimer ${client.name}`}
-                  title="Supprimer le client"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
+              {/* Deleting a client cascades to every invoice it owns, and
+                  this used to happen on the first click of a bare icon. */}
+              {pendingDelete === client.id ? (
+                <div className="mt-5 rounded-xl bg-[#fff1f0] px-3 py-3 text-sm text-[#c13a3a]">
+                  <p className="font-semibold">Supprimer {client.name} ?</p>
+                  <p className="mt-1 text-xs">Ses factures seront supprimées avec lui. Action définitive.</p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      className="rounded-xl bg-[#c13a3a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#a83030]"
+                      type="button"
+                      onClick={() => handleDelete(client.id)}
+                    >
+                      Oui, supprimer
+                    </button>
+                    <button
+                      className="rounded-xl border border-[#e4e3dd] bg-white px-3 py-2 text-xs font-semibold text-[#172238]"
+                      type="button"
+                      onClick={() => setPendingDelete(null)}
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 flex items-center gap-2">
+                  <Link className="flex-1 rounded-xl border border-[#e4e3dd] bg-white px-3 py-2 text-center text-sm font-semibold text-[#172238] hover:border-[#d9d8d1]" href={`/clients/${client.id}`}>
+                    <span className="inline-flex items-center gap-2">
+                      <Pencil size={14} /> Modifier
+                    </span>
+                  </Link>
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-[#f0d2d2] bg-[#fff8f8] px-3 py-2 text-sm font-semibold text-[#c13a3a] hover:bg-[#ffeaea]"
+                    type="button"
+                    onClick={() => setPendingDelete(client.id)}
+                  >
+                    <Trash2 size={15} /> Supprimer
+                  </button>
+                </div>
+              )}
 
               <Link className="mt-3 block text-center text-sm font-semibold text-[#e8712b]" href={`/invoices/new?client=${client.id}`}>
                 Créer une facture pour ce client
@@ -123,7 +158,11 @@ export default function ClientsPage() {
 
         {clients.length === 0 && (
           <div className="rounded-2xl border border-dashed border-[#d9d8d1] bg-[#fbfaf7] p-10 text-center text-sm text-[#6f7885]">
-            Aucun client trouvé.
+            {loading
+              ? "Chargement des clients…"
+              : search
+                ? `Aucun client ne correspond à « ${search} ».`
+                : "Aucun client enregistré pour le moment."}
           </div>
         )}
 

@@ -38,9 +38,13 @@ test.describe("invoice lifecycle", () => {
     await page.getByRole("button", { name: /Télécharger le PDF/ }).click();
     expect((await downloadPromise).suggestedFilename()).toContain("facture");
 
+    // Deleting is a two-step confirmation, so a stray click can't destroy
+    // an invoice.
     await page.goto("/invoices");
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.locator(`button[aria-label="Supprimer ${previewedNumber}"]`).click();
+    const row = page.locator("div").filter({ hasText: previewedNumber }).last();
+    await row.getByRole("button", { name: /Supprimer/ }).click();
+    await expect(page.getByText(/Supprimer définitivement/)).toBeVisible();
+    await page.getByRole("button", { name: "Oui", exact: true }).click();
     await expect(page.getByText(previewedNumber, { exact: true })).toBeHidden();
   });
 });

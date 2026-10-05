@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import MobileNav from "@/components/layout/mobile-nav";
 import { getInvoicesPage, removeInvoice, updateInvoiceStatus as updateInvoiceStatusInDatabase } from "@/app/actions/billing";
 import {
   getInvoiceDueDate,
   isInvoiceOverdue,
-  getNextInvoiceStatus,
   invoiceStatusMeta,
   invoiceStatusOrder,
   invoiceStatusStyles,
@@ -28,15 +27,28 @@ export default function InvoicesPage() {
   // Bumped after a mutation to re-run the fetch effect below without
   // calling it imperatively.
   const [reloadToken, setReloadToken] = useState(0);
+  // Deleting used to happen on the first click of a bare trash icon, with
+  // no way back; the row now asks for confirmation first.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Without this the list renders "aucune facture" while it is still
+  // loading, telling the user their register is empty when it isn't.
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     async function loadPage() {
+      setLoading(true);
       const result = await getInvoicesPage({ page, pageSize: PAGE_SIZE, status: filter === "Toutes" ? undefined : filter });
+      if (!active) return;
       setInvoices(result.invoices);
       setTotal(result.total);
       setStatusCounts(result.statusCounts);
+      setLoading(false);
     }
     void loadPage();
+    return () => {
+      active = false;
+    };
   }, [page, filter, reloadToken]);
 
   const changeFilter = (next: "Toutes" | InvoiceStatus) => {
@@ -46,18 +58,15 @@ export default function InvoicesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const updateStatus = async (invoiceNumber: string) => {
-    const currentInvoice = invoices.find((invoice) => invoice.number === invoiceNumber);
-    if (!currentInvoice) return;
-
-    const nextStatus = getNextInvoiceStatus(currentInvoice.status);
-    await updateInvoiceStatusInDatabase(invoiceNumber, nextStatus);
+  const updateStatus = async (invoiceNumber: string, status: InvoiceStatus) => {
+    await updateInvoiceStatusInDatabase(invoiceNumber, status);
     setReloadToken((token) => token + 1);
   };
 
   const statusSummary = invoiceStatusOrder.map((status) => ({ status, count: statusCounts[status] }));
 
   const removeInvoiceFromDatabase = async (invoiceNumber: string) => {
+    setPendingDelete(null);
     await removeInvoice(invoiceNumber);
     // If we just removed the last invoice on this page, step back a page
     // instead of showing an empty page that still claims more exist.
@@ -132,48 +141,70 @@ export default function InvoicesPage() {
               <p className="hidden text-sm font-semibold md:block">{invoice.totalTtc.toLocaleString("fr-FR")} FCFA</p>
 
               <div className="col-span-2 flex flex-wrap items-center justify-start gap-2 md:col-span-1 md:justify-start">
-                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${invoiceStatusStyles[invoice.status]}`}>
-                  {invoice.status}
-                </span>
+                {/* A select rather than a button that cycles to the next
+                    status: the old one gave no clue what it would do and
+                    offered no way back once clicked. */}
+                <label className="sr-only" htmlFor={`status-${invoice.id}`}>
+                  Statut de la facture {invoice.number}
+                </label>
+                <select
+                  className={`cursor-pointer rounded-full px-3 py-1.5 text-[11px] font-semibold outline-none ${invoiceStatusStyles[invoice.status]}`}
+                  id={`status-${invoice.id}`}
+                  value={invoice.status}
+                  onChange={(event) => updateStatus(invoice.number, event.target.value as InvoiceStatus)}
+                >
+                  {invoiceStatusOrder.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+
                 {isInvoiceOverdue(invoice) && (
-                  <span className="hidden rounded-full bg-[#c13a3a]/10 px-2.5 py-1 text-[11px] font-semibold text-[#c13a3a] sm:inline-flex">En retard</span>
+                  <span className="rounded-full bg-[#c13a3a]/10 px-2.5 py-1 text-[11px] font-semibold text-[#c13a3a]">En retard</span>
                 )}
-                <span className="hidden text-[10px] text-[#6f7885] sm:block">{invoiceStatusMeta[invoice.status].description}</span>
-                <span className="hidden text-[10px] text-[#6f7885] xl:block">Échéance {getInvoiceDueDate(invoice)}</span>
+                <span className="hidden text-[11px] text-[#6f7885] lg:block">Échéance {getInvoiceDueDate(invoice)}</span>
+
                 <Link
-                  className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white p-2 text-[#172238] hover:border-[#d9d8d1]"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[#e4e3dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#172238] hover:border-[#d9d8d1]"
                   href={`/invoices/${invoice.id}`}
-                  aria-label={`Voir la facture ${invoice.number}`}
-                  title="Voir la facture"
                 >
-                  <Eye size={14} />
+                  <Eye size={14} /> Voir
                 </Link>
-                <button
-                  className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white p-2 text-[#172238] hover:border-[#d9d8d1]"
-                  type="button"
-                  onClick={() => updateStatus(invoice.number)}
-                  aria-label={`Mettre à jour le statut de ${invoice.number}`}
-                  title="Changer le statut"
-                >
-                  <Check size={14} />
-                </button>
-                <button
-                  className="inline-flex items-center gap-1 rounded-full border border-[#e4e3dd] bg-white p-2 text-[#c13a3a] hover:border-[#f0d2d2]"
-                  type="button"
-                  onClick={() => removeInvoiceFromDatabase(invoice.number)}
-                  aria-label={`Supprimer ${invoice.number}`}
-                  title="Supprimer"
-                >
-                  <Trash2 size={14} />
-                </button>
+
+                {pendingDelete === invoice.number ? (
+                  <span className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl bg-[#fff1f0] px-3 py-2 text-xs font-semibold text-[#c13a3a] sm:w-auto sm:rounded-full sm:py-1.5">
+                    Supprimer définitivement&nbsp;?
+                    <button className="underline" type="button" onClick={() => removeInvoiceFromDatabase(invoice.number)}>
+                      Oui
+                    </button>
+                    <button className="text-[#6f7885] underline" type="button" onClick={() => setPendingDelete(null)}>
+                      Annuler
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#e4e3dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#c13a3a] hover:border-[#f0d2d2]"
+                    type="button"
+                    onClick={() => setPendingDelete(invoice.number)}
+                  >
+                    <Trash2 size={14} /> Supprimer
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </section>
 
-        {invoices.length === 0 && (
+        {loading && invoices.length === 0 && (
           <div className="mt-5 rounded-2xl border border-dashed border-[#d9d8d1] bg-[#fbfaf7] p-10 text-center text-sm text-[#6f7885]">
-            Aucune facture ne correspond à ce filtre.
+            Chargement des factures…
+          </div>
+        )}
+
+        {!loading && invoices.length === 0 && (
+          <div className="mt-5 rounded-2xl border border-dashed border-[#d9d8d1] bg-[#fbfaf7] p-10 text-center text-sm text-[#6f7885]">
+            {filter === "Toutes" ? "Aucune facture enregistrée pour le moment." : `Aucune facture au statut « ${filter} ».`}
           </div>
         )}
 
