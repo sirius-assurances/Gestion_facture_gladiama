@@ -6,6 +6,7 @@ import { createClient as createSupabaseServerClient } from "@/lib/supabase/serve
 import { formatFrenchDate } from "@/lib/format";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { defaultClients, defaultInvoices } from "@/lib/seed-data";
+import { generateInvoicePdfBuffer } from "@/lib/pdf/server";
 import type { ClientRecord, InvoiceRecord, InvoiceStatus } from "@/lib/invoice";
 
 const statusToDb: Record<InvoiceStatus, "DRAFT" | "SENT" | "PAID"> = {
@@ -337,6 +338,30 @@ export async function getClient(clientId: string) {
 
 const PDF_BUCKET = "invoices";
 
+// Named after the invoice rather than its uuid: this filename is what the
+// browser offers when saving the PDF opened from the signed URL, and
+// "3e651cf1-455a-….pdf" is not something anyone can file.
+function pdfPathFor(invoiceNumber: string) {
+  return `facture-${invoiceNumber.replace(/[^a-z0-9]/gi, "-")}.pdf`;
+}
+
+/**
+ * Uploads the bytes to the private bucket and records the path on the
+ * invoice. Shared by the browser-generated and server-generated routes so
+ * the two can't file the same invoice under different names.
+ */
+async function storeInvoicePdf(invoiceId: string, invoiceNumber: string, bytes: Buffer) {
+  const supabase = await createSupabaseServerClient();
+  const path = pdfPathFor(invoiceNumber);
+  const { error } = await supabase.storage
+    .from(PDF_BUCKET)
+    .upload(path, bytes, { contentType: "application/pdf", upsert: true });
+  if (error) throw new Error(`Échec de l'enregistrement du PDF : ${error.message}`);
+
+  await prisma.invoice.update({ where: { id: invoiceId }, data: { pdfPath: path } });
+  return path;
+}
+
 // Stores the already-generated PDF (built client-side with jsPDF, base64
 // encoded) in Supabase Storage so it can be re-downloaded later without
 // regenerating it. The bucket is private; access is via short-lived signed
@@ -348,17 +373,43 @@ export async function saveInvoicePdf(invoiceId: string, pdfBase64: string) {
   const invoice = await prisma.invoice.findUnique({ where: { id } });
   if (!invoice) throw new Error("Facture introuvable.");
 
-  const supabase = await createSupabaseServerClient();
-  // Named after the invoice rather than its uuid: this filename is what the
-  // browser offers when saving the PDF opened from the signed URL, and
-  // "3e651cf1-455a-….pdf" is not something anyone can file.
-  const path = `facture-${invoice.invoiceNumber.replace(/[^a-z0-9]/gi, "-")}.pdf`;
-  const { error } = await supabase.storage
-    .from(PDF_BUCKET)
-    .upload(path, Buffer.from(base64, "base64"), { contentType: "application/pdf", upsert: true });
-  if (error) throw new Error(`Échec de l'enregistrement du PDF : ${error.message}`);
+  await storeInvoicePdf(id, invoice.invoiceNumber, Buffer.from(base64, "base64"));
+}
 
-  await prisma.invoice.update({ where: { id }, data: { pdfPath: path } });
+/**
+ * Builds the invoice PDF on the server, from the database alone, and stores
+ * it. Nothing here needs a browser — which is the point: an invoice can be
+ * sent, or chased up by a scheduled reminder, without anyone having opened
+ * it first.
+ */
+export async function generateAndStoreInvoicePdf(invoiceId: string) {
+  await requireUser();
+  const id = z.string().min(1).parse(invoiceId);
+  const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, items: true } });
+  if (!invoice) throw new Error("Facture introuvable.");
+
+  const item = invoice.items[0];
+  const pdf = await generateInvoicePdfBuffer({
+    invoiceNumber: invoice.invoiceNumber,
+    clientName: invoice.client.name,
+    clientLocation: invoice.client.location,
+    projectName: invoice.client.projectName ?? undefined,
+    marketNumber: invoice.client.marketNumber ?? undefined,
+    contractNumber: invoice.client.contractNumber ?? undefined,
+    periodStart: formatFrenchDate(invoice.periodStart),
+    periodEnd: formatFrenchDate(invoice.periodEnd),
+    designation: item?.designation ?? "Fourniture latérite crue",
+    quantity: item ? Number(item.quantity) : 0,
+    unitPrice: item ? Number(item.unitPrice) : 0,
+    hasTva: invoice.hasTva,
+    // The stored totals, not a fresh computation: they are what the server
+    // already validated on save, and the PDF must match the ledger.
+    totalHt: Number(invoice.totalHt),
+    totalTva: Number(invoice.totalTva),
+    totalTtc: Number(invoice.totalTtc),
+  });
+
+  return storeInvoicePdf(id, invoice.invoiceNumber, pdf);
 }
 
 export async function getInvoicePdfUrl(invoiceId: string) {

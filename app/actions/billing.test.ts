@@ -116,6 +116,11 @@ describe("billing Server Actions without an authenticated session", () => {
     await expect(saveInvoicePdf("inv-1", "AAAA")).rejects.toThrow("Authentification requise.");
   });
 
+  it("generateAndStoreInvoicePdf rejects", async () => {
+    const { generateAndStoreInvoicePdf } = await import("@/app/actions/billing");
+    await expect(generateAndStoreInvoicePdf("inv-1")).rejects.toThrow("Authentification requise.");
+  });
+
   it("getInvoicePdfUrl rejects", async () => {
     const { getInvoicePdfUrl } = await import("@/app/actions/billing");
     await expect(getInvoicePdfUrl("inv-1")).rejects.toThrow("Authentification requise.");

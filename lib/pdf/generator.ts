@@ -34,6 +34,19 @@ function getCountry(location: string): string {
   return (location.includes(",") ? location.split(",").at(-1) ?? location : location).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+/**
+ * The three real assets, in draw order. Earlier names were tried first via a
+ * fallback chain, but they don't exist in public/images, so every single PDF
+ * generation fired two 404s before falling through.
+ *
+ * Shared with the server-side loader (lib/pdf/server.ts) so the two can't
+ * drift onto different files.
+ */
+export const INVOICE_IMAGE_FILES = { header: "Picture3.png", stamp: "Picture1.png", footer: "Picture2.png" } as const;
+
+/** Each one a PNG data URL, or null when the asset could not be read. */
+export type InvoiceImages = { header: string | null; stamp: string | null; footer: string | null };
+
 // Invoice header/stamp/footer images are static assets, so their data-URL
 // conversion is cached across PDF generations instead of being refetched
 // and re-encoded on every invoice.
@@ -60,16 +73,15 @@ async function loadImage(path: string): Promise<string | null> {
   }
 }
 
-export async function generateInvoiceDocument(data: InvoicePdfData) {
+/**
+ * Draws the invoice. Pure computation on a jsPDF document — no fetch, no DOM,
+ * no filesystem — so it runs identically in the browser and under Node. The
+ * images are passed in because only their loading differs between the two
+ * (see generateInvoiceDocument here and lib/pdf/server.ts).
+ */
+export function renderInvoice(data: InvoicePdfData, images: InvoiceImages) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const [header, stamp, footer] = await Promise.all([
-    // These three files are the real assets. Earlier names were tried first
-    // via a fallback chain, but they don't exist in public/images, so every
-    // single PDF generation fired two 404s before falling through.
-    loadImage("/images/Picture3.png"),
-    loadImage("/images/Picture1.png"),
-    loadImage("/images/Picture2.png"),
-  ]);
+  const { header, stamp, footer } = images;
 
   if (header) doc.addImage(header, "PNG", 20, 15, 170, 26.7);
   else {
@@ -244,6 +256,16 @@ export async function generateInvoiceDocument(data: InvoicePdfData) {
   }
 
   return doc;
+}
+
+/** Browser entry point: pulls the assets over HTTP, then draws. */
+export async function generateInvoiceDocument(data: InvoicePdfData) {
+  const [header, stamp, footer] = await Promise.all([
+    loadImage(`/images/${INVOICE_IMAGE_FILES.header}`),
+    loadImage(`/images/${INVOICE_IMAGE_FILES.stamp}`),
+    loadImage(`/images/${INVOICE_IMAGE_FILES.footer}`),
+  ]);
+  return renderInvoice(data, { header, stamp, footer });
 }
 
 export async function downloadInvoicePdf(data: InvoicePdfData) {
