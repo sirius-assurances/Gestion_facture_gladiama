@@ -26,3 +26,13 @@ body {
 * { box-sizing: border-box; }
 
 button, a { -webkit-tap-highlight-color: transparent; }
+
+/* Safari on iOS zooms the whole page in when a form control whose text is
+   smaller than 16px takes focus, and it never zooms back out: the page
+   stays magnified until the user pinches it back by hand. Every control in
+   the app sits at 11-14px, so touch devices get 16px regardless of the
+   utility class on the element. Unlayered, so it wins over Tailwind's
+   `text-sm` without an `!important`. */
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+}
