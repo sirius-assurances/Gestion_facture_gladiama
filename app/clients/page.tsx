@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import MobileNav from "@/components/layout/mobile-nav";
 import { getClientsPage, removeClient } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice";
 
@@ -59,12 +58,8 @@ export default function ClientsPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10 lg:pb-10">
+    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:px-12 lg:py-10 lg:pb-10">
       <div className="mx-auto max-w-5xl">
-        <Link className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-[#6f7885] hover:text-[#172238]" href="/">
-          <ArrowLeft size={17} /> Retour au tableau de bord
-        </Link>
-
         <div className="mb-8 flex flex-col items-start gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#e8712b]">Carnet clients</p>
@@ -140,6 +135,7 @@ export default function ClientsPage() {
                     </span>
                   </Link>
                   <button
+                    aria-label={`Supprimer le client ${client.name}`}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-[#f0d2d2] bg-[#fff8f8] px-3 py-2 text-sm font-semibold text-[#c13a3a] hover:bg-[#ffeaea]"
                     type="button"
                     onClick={() => setPendingDelete(client.id)}
@@ -192,7 +188,6 @@ export default function ClientsPage() {
           </div>
         )}
       </div>
-      <MobileNav />
     </main>
   );
 }

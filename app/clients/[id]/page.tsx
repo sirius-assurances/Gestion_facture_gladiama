@@ -4,7 +4,6 @@ import Link from "next/link";
 import { ArrowLeft, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import MobileNav from "@/components/layout/mobile-nav";
 import { getClient, updateClient } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice";
 
@@ -23,7 +22,7 @@ export default function ClientEditPage() {
 
   if (!client) {
     return (
-      <main className="min-h-dvh bg-[#f5f4f0] px-5 py-6 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10">
+      <main className="min-h-dvh bg-[#f5f4f0] px-5 py-6 sm:px-8 lg:px-12 lg:py-10">
         <div className="mx-auto max-w-3xl rounded-2xl border border-[#e4e3dd] bg-[#fbfaf7] p-10 text-center text-sm text-[#6f7885]">
           Client introuvable.
         </div>
@@ -41,7 +40,7 @@ export default function ClientEditPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10 lg:pb-10">
+    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:px-12 lg:py-10 lg:pb-10">
       <div className="mx-auto max-w-2xl">
         <Link className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-[#6f7885] hover:text-[#172238]" href="/clients">
           <ArrowLeft size={17} /> Retour aux clients
@@ -162,7 +161,6 @@ export default function ClientEditPage() {
           </div>
         </div>
       </div>
-      <MobileNav />
     </main>
   );
 }

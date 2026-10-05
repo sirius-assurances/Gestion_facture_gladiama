@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import MobileNav from "@/components/layout/mobile-nav";
 import { getInvoicesPage, removeInvoice, updateInvoiceStatus as updateInvoiceStatusInDatabase } from "@/app/actions/billing";
 import {
   getInvoiceDueDate,
@@ -75,12 +74,8 @@ export default function InvoicesPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10 lg:pb-10">
+    <main className="min-h-dvh bg-[#f5f4f0] px-4 py-5 pb-24 sm:px-8 lg:px-12 lg:py-10 lg:pb-10">
       <div className="mx-auto max-w-5xl">
-        <Link className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-[#6f7885] hover:text-[#172238]" href="/">
-          <ArrowLeft size={17} /> Retour au tableau de bord
-        </Link>
-
         <div className="mb-8 flex flex-col items-start gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#e8712b]">Registre des factures</p>
@@ -165,7 +160,10 @@ export default function InvoicesPage() {
                 )}
                 <span className="hidden text-[11px] text-[#6f7885] lg:block">Échéance {getInvoiceDueDate(invoice)}</span>
 
+                {/* The visible label is short; the accessible name names the
+                    invoice, since "Voir" repeats on every row. */}
                 <Link
+                  aria-label={`Voir la facture ${invoice.number}`}
                   className="inline-flex items-center gap-1.5 rounded-full border border-[#e4e3dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#172238] hover:border-[#d9d8d1]"
                   href={`/invoices/${invoice.id}`}
                 >
@@ -184,6 +182,7 @@ export default function InvoicesPage() {
                   </span>
                 ) : (
                   <button
+                    aria-label={`Supprimer la facture ${invoice.number}`}
                     className="inline-flex items-center gap-1.5 rounded-full border border-[#e4e3dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#c13a3a] hover:border-[#f0d2d2]"
                     type="button"
                     onClick={() => setPendingDelete(invoice.number)}
@@ -234,7 +233,6 @@ export default function InvoicesPage() {
           </div>
         )}
       </div>
-      <MobileNav />
     </main>
   );
 }

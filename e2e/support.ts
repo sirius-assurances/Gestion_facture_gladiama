@@ -32,13 +32,17 @@ export async function signIn(page: Page) {
   // native submit is prevented but no request is sent). Rather than guess a
   // delay, submit and retry until the app actually moves off /login, or
   // until it tells us the credentials were refused.
-  for (let attempt = 1; attempt <= 6; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Already through (a previous attempt landed while we were retrying).
+    if (!new URL(page.url()).pathname.startsWith("/login")) return;
+
     await email.fill(E2E_EMAIL);
     await password.fill(E2E_PASSWORD);
     await submit.click();
 
     try {
-      await page.waitForFunction(() => !location.pathname.startsWith("/login"), undefined, { timeout: 10_000 });
+      // Generous: the dev server compiles the dashboard on first visit.
+      await page.waitForFunction(() => !location.pathname.startsWith("/login"), undefined, { timeout: 25_000 });
       return;
     } catch {
       const refusal = await page

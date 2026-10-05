@@ -41,8 +41,7 @@ test.describe("invoice lifecycle", () => {
     // Deleting is a two-step confirmation, so a stray click can't destroy
     // an invoice.
     await page.goto("/invoices");
-    const row = page.locator("div").filter({ hasText: previewedNumber }).last();
-    await row.getByRole("button", { name: /Supprimer/ }).click();
+    await page.locator(`button[aria-label="Supprimer la facture ${previewedNumber}"]`).click();
     await expect(page.getByText(/Supprimer définitivement/)).toBeVisible();
     await page.getByRole("button", { name: "Oui", exact: true }).click();
     await expect(page.getByText(previewedNumber, { exact: true })).toBeHidden();

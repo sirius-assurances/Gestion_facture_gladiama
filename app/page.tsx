@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, ArrowUpRight, Bell, ChevronRight, CircleDollarSign, Clock3, FileText, Home as HomeIcon, Menu, Plus, TrendingUp, Users, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Bell, ChevronRight, CircleDollarSign, Clock3, FileText, Plus, TrendingUp, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
-import MobileNav from "@/components/layout/mobile-nav";
 import { getDashboardMetrics, type DashboardMetrics } from "@/app/actions/billing";
 import { invoiceStatusStyles } from "@/lib/invoice";
 import { formatCfa } from "@/lib/format";
@@ -82,20 +81,9 @@ export default function Home() {
 
   return (
     <div className="min-h-dvh bg-[#f5f4f0] pb-24 lg:pb-0">
-      <aside className="fixed inset-y-0 left-0 hidden w-[248px] flex-col bg-[#172238] px-7 py-8 text-white lg:flex">
-        <div className="mb-16 flex items-center gap-3">
-          <img alt="GLADIAMA SUARL" className="h-auto w-40 object-contain" src="/images/logo-gladiama.png" />
-        </div>
-        <nav className="space-y-2 text-sm">
-          <Link className="flex items-center gap-3 rounded-xl bg-white/10 px-4 py-3 font-medium" href="/"><HomeIcon size={18} /> Accueil</Link>
-          <Link className="flex items-center gap-3 rounded-xl px-4 py-3 text-white/60 hover:bg-white/10 hover:text-white" href="/invoices"><FileText size={18} /> Factures</Link>
-          <Link className="flex items-center gap-3 rounded-xl px-4 py-3 text-white/60 hover:bg-white/10 hover:text-white" href="/clients"><Users size={18} /> Clients</Link>
-        </nav>
-      </aside>
-
-      <main className="mx-auto max-w-[1440px] px-5 py-5 sm:px-8 lg:ml-[248px] lg:px-12 lg:py-10">
+      <main className="mx-auto max-w-[1440px] px-5 py-5 sm:px-8 lg:px-12 lg:py-10">
         <header className="mb-10 flex items-center justify-between">
-          <div className="flex items-center gap-3 lg:hidden"><Link aria-label="Ouvrir les clients" className="rounded-lg p-2 hover:bg-white" href="/clients"><Menu size={22} /></Link><img alt="GLADIAMA SUARL" className="h-auto w-32 object-contain" src="/images/logo-gladiama.png" /></div>
+          <div className="flex items-center gap-3 lg:hidden"><img alt="GLADIAMA SUARL" className="h-auto w-32 object-contain" src="/images/logo-gladiama.png" /></div>
           <div className="hidden lg:block"><p className="text-sm font-medium text-[#6f7885]">{new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())}</p><h1 className="mt-1 font-[var(--font-space-grotesk)] text-3xl font-bold tracking-tight">Bonjour, Abdoulaye</h1></div>
           <div className="flex items-center gap-3"><Link aria-label="Voir les factures" className="rounded-full border border-[#e4e3dd] bg-white p-2.5" href="/invoices"><Bell size={18} /></Link><div className="grid h-10 w-10 place-items-center rounded-full bg-[#e8712b] font-bold text-white">AD</div></div>
         </header>
@@ -195,7 +183,6 @@ export default function Home() {
         <Link className="mt-4 flex items-center justify-center gap-1 text-sm font-semibold text-[#e8712b] sm:hidden" href="/invoices">Voir toutes les factures <ChevronRight size={16} /></Link>
       </main>
       <Link aria-label="Créer une nouvelle facture" className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] grid h-14 w-14 place-items-center rounded-full bg-[#e8712b] text-white shadow-[0_12px_30px_rgba(232,113,43,0.35)] transition-transform hover:scale-105 lg:bottom-10 lg:right-10" href="/invoices/new"><Plus size={25} /></Link>
-      <MobileNav />
     </div>
   );
 }
