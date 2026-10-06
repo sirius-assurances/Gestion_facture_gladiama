@@ -33,7 +33,11 @@ test.describe("invoice PDF", () => {
       const bytes = Buffer.concat(chunks);
 
       expect(bytes.subarray(0, 4).toString(), `${invoiceNumber} (TVA=${hasTva}) is not a PDF`).toBe("%PDF");
-      expect(bytes.length).toBeGreaterThan(1000);
+      // Not just "bigger than nothing": the header logo, stamp and footer
+      // are fetched separately, and a PDF that lost them still opens — it
+      // simply goes out to the client with plain text where the branding
+      // should be. Measured: ~320KB with the images, ~3KB without.
+      expect(bytes.length, `${invoiceNumber} looks like it lost its branding images`).toBeGreaterThan(100_000);
     }
 
     expect(pageErrors, "the page threw while generating a PDF").toEqual([]);
