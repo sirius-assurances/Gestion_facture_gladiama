@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which holds only placeholders and is the only
+# record of which variables the app needs. The glob above had been hiding
+# it, so a fresh clone had no way to know.
+!.env.example
 
 # vercel
 .vercel
