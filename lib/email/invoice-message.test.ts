@@ -1,32 +1,136 @@
 import { describe, expect, it } from "vitest";
-import { buildAttachmentName, buildInvoiceBody, buildInvoiceSubject, parseRecipients } from "@/lib/email/invoice-message";
+import {
+  buildAttachmentName,
+  buildInvoiceHtml,
+  buildInvoiceLetter,
+  buildInvoiceSubject,
+  buildInvoiceSummary,
+  buildInvoiceText,
+  parseRecipients,
+  type InvoiceMessageInput,
+} from "@/lib/email/invoice-message";
 
-const message = {
+const withTva: InvoiceMessageInput = {
   invoiceNumber: "N°28",
   clientName: "SOGEA SATOM",
-  totalFormatted: "3 835 000 FCFA",
-  periodStart: "01 Septembre 2026",
-  periodEnd: "17 Septembre 2026",
+  designation: "Fourniture latérite crue",
+  quantity: 6000,
+  unit: "m³",
+  unitPrice: 600,
+  hasTva: true,
+  tvaRate: 18,
+  totalHt: 3_600_000,
+  totalTva: 648_000,
+  totalTtc: 4_248_000,
+  periodStart: "26 Septembre 2026",
+  periodEnd: "25 Octobre 2026",
+  dueDate: "25 Novembre 2026",
+  projectName: "Travaux de terrassement",
+  marketNumber: "Marché N°TA3/1087/AGR",
+  contractNumber: "Contrat T0032/24",
 };
 
-describe("invoice message", () => {
-  it("names the invoice in the subject", () => {
-    expect(buildInvoiceSubject(message)).toContain("N°28");
+const bare: InvoiceMessageInput = {
+  ...withTva,
+  hasTva: false,
+  totalTva: 0,
+  totalTtc: 3_600_000,
+  projectName: undefined,
+  marketNumber: undefined,
+  contractNumber: undefined,
+};
+
+describe("buildInvoiceSubject", () => {
+  // A large contractor's accounts department files by market reference;
+  // without it the invoice sits unmatched in an inbox.
+  it("carries the market reference when there is one", () => {
+    expect(buildInvoiceSubject(withTva)).toContain("Marché N°TA3/1087/AGR");
   });
 
-  it("states the figures the client needs to reconcile the invoice", () => {
-    const body = buildInvoiceBody(message);
+  it("stays readable when there is none", () => {
+    expect(buildInvoiceSubject(bare)).toBe("Facture N°28 — GLADIAMA SUARL");
+  });
+});
 
-    expect(body).toContain("SOGEA SATOM");
-    expect(body).toContain("3 835 000 FCFA");
-    expect(body).toContain("01 Septembre 2026");
+describe("buildInvoiceLetter", () => {
+  it("opens as business correspondence, not a chat message", () => {
+    expect(buildInvoiceLetter(withTva)).toMatch(/^Madame, Monsieur,/);
   });
 
-  // The old mailto: route could not carry a file, so the body had to ask the
-  // recipient to be sent the PDF separately. The attachment is real now, and
-  // that apology must not survive.
-  it("no longer tells the recipient to expect the PDF elsewhere", () => {
-    expect(buildInvoiceBody(message)).not.toMatch(/téléchargé|joindre/i);
+  it("states the payment deadline, which is the point of sending it", () => {
+    expect(buildInvoiceLetter(withTva)).toContain("25 Novembre 2026");
+  });
+
+  it("refers to the project when the client has one", () => {
+    expect(buildInvoiceLetter(withTva)).toContain("Travaux de terrassement");
+  });
+
+  it("falls back to the period when the client has no project", () => {
+    expect(buildInvoiceLetter(bare)).toContain("du 26 Septembre 2026 au 25 Octobre 2026");
+  });
+
+  // The figures live in the generated summary. Repeating them in the editable
+  // letter would let a hand-edited message contradict the invoice attached.
+  it("quotes no amounts", () => {
+    expect(buildInvoiceLetter(withTva)).not.toMatch(/FCFA/);
+  });
+});
+
+describe("buildInvoiceSummary", () => {
+  it("breaks out VAT only when the invoice has it", () => {
+    const labels = (input: InvoiceMessageInput) => buildInvoiceSummary(input).map(([label]) => label);
+
+    expect(labels(withTva)).toContain("TVA (18 %)");
+    expect(labels(bare)).not.toContain("TVA (18 %)");
+  });
+
+  it("omits references the client has not set, rather than printing blanks", () => {
+    const labels = buildInvoiceSummary(bare).map(([label]) => label);
+
+    expect(labels).not.toContain("Marché");
+    expect(labels).not.toContain("Contrat");
+  });
+
+  it("shows the total the client must actually pay", () => {
+    const total = buildInvoiceSummary(withTva).find(([label]) => label === "Montant total");
+
+    expect(total?.[1]).toBe("4 248 000 FCFA");
+  });
+});
+
+describe("buildInvoiceText", () => {
+  it("keeps the sender's own wording", () => {
+    expect(buildInvoiceText("Bonjour Monsieur Diop,", withTva)).toContain("Bonjour Monsieur Diop,");
+  });
+
+  it("appends the figures and the legal identifiers", () => {
+    const text = buildInvoiceText(buildInvoiceLetter(withTva), withTva);
+
+    expect(text).toContain("4 248 000 FCFA");
+    expect(text).toContain("N.I.N.E.A : 009384629");
+  });
+});
+
+describe("buildInvoiceHtml", () => {
+  it("escapes the sender's text so a stray character cannot break the layout", () => {
+    expect(buildInvoiceHtml("Objet : <urgent> & suite", withTva)).toContain("&lt;urgent&gt; &amp; suite");
+  });
+
+  it("keeps paragraph breaks from the letter", () => {
+    const html = buildInvoiceHtml("Premier paragraphe.\n\nSecond paragraphe.", withTva);
+
+    expect(html.match(/<p /g) ?? []).toHaveLength(2);
+  });
+
+  // Mail clients strip <style> blocks and support neither flexbox nor grid.
+  it("uses no layout a mail client would drop", () => {
+    const html = buildInvoiceHtml(buildInvoiceLetter(withTva), withTva);
+
+    expect(html).not.toMatch(/<style|display:\s*(flex|grid)/);
+  });
+
+  it("carries the same total as the text part", () => {
+    expect(buildInvoiceHtml(buildInvoiceLetter(withTva), withTva)).toContain("4 248 000 FCFA");
   });
 });
 

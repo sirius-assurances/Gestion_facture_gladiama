@@ -3,9 +3,17 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
-import { formatCfa, formatFrenchDate } from "@/lib/format";
+import { formatFrenchDate } from "@/lib/format";
 import { createTransport, formatSender, readMailerConfig } from "@/lib/email/mailer";
-import { buildAttachmentName, buildInvoiceBody, buildInvoiceSubject } from "@/lib/email/invoice-message";
+import {
+  buildAttachmentName,
+  buildInvoiceHtml,
+  buildInvoiceLetter,
+  buildInvoiceSubject,
+  buildInvoiceSummary,
+  buildInvoiceText,
+  type InvoiceMessageInput,
+} from "@/lib/email/invoice-message";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { defaultClients, defaultInvoices } from "@/lib/seed-data";
 import { generateInvoicePdfBuffer } from "@/lib/pdf/server";
@@ -475,10 +483,40 @@ export type InvoiceEmailDraft = {
   to: string;
   subject: string;
   body: string;
+  /** Appended automatically; shown read-only so the sender knows it is coming. */
+  summary: Array<[string, string]>;
   attachmentName: string;
   configured: boolean;
   missing: string[];
 };
+
+/**
+ * Every figure the message quotes comes from here, never from the browser:
+ * an email that contradicts the invoice attached to it is worse than no
+ * email at all.
+ */
+function invoiceMessageInput(invoice: InvoiceWithRelations): InvoiceMessageInput {
+  const item = invoice.items[0];
+  return {
+    invoiceNumber: invoice.invoiceNumber,
+    clientName: invoice.client.name,
+    designation: item?.designation ?? "Fourniture latérite crue",
+    quantity: item ? Number(item.quantity) : 0,
+    unit: item?.unit ?? "m³",
+    unitPrice: item ? Number(item.unitPrice) : 0,
+    hasTva: invoice.hasTva,
+    tvaRate: Number(invoice.tvaRate),
+    totalHt: Number(invoice.totalHt),
+    totalTva: Number(invoice.totalTva),
+    totalTtc: Number(invoice.totalTtc),
+    periodStart: formatFrenchDate(invoice.periodStart),
+    periodEnd: formatFrenchDate(invoice.periodEnd),
+    dueDate: formatFrenchDate(invoice.dueDate),
+    projectName: invoice.client.projectName ?? undefined,
+    marketNumber: invoice.client.marketNumber ?? undefined,
+    contractNumber: invoice.client.contractNumber ?? undefined,
+  };
+}
 
 /**
  * Everything the compose dialog opens with. The sender comes from the
@@ -492,19 +530,14 @@ export async function getInvoiceEmailDraft(invoiceId: string): Promise<InvoiceEm
   if (!invoice) throw new Error("Facture introuvable.");
 
   const mailer = readMailerConfig();
-  const message = {
-    invoiceNumber: invoice.invoiceNumber,
-    clientName: invoice.client.name,
-    totalFormatted: formatCfa(Number(invoice.totalTtc)),
-    periodStart: formatFrenchDate(invoice.periodStart),
-    periodEnd: formatFrenchDate(invoice.periodEnd),
-  };
+  const message = invoiceMessageInput(invoice);
 
   return {
     from: mailer.ok ? formatSender(mailer.config) : "",
     to: invoice.client.email ?? "",
     subject: buildInvoiceSubject(message),
-    body: buildInvoiceBody(message),
+    body: buildInvoiceLetter(message),
+    summary: buildInvoiceSummary(message),
     attachmentName: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
     configured: mailer.ok,
     missing: mailer.ok ? [] : mailer.missing,
@@ -539,6 +572,7 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
   const pdf = await renderInvoicePdf(invoice);
   await storeInvoicePdf(invoice, pdf);
 
+  const message = invoiceMessageInput(invoice);
   const transport = createTransport(mailer.config);
   try {
     await transport.sendMail({
@@ -550,7 +584,11 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
       // this the sender keeps no record of what left.
       bcc: mailer.config.fromEmail,
       subject: data.subject,
-      text: data.body,
+      // Both parts: the HTML is what most clients show, the text is the
+      // fallback for those that refuse it — and for spam filters, which
+      // treat an HTML-only message as a smell.
+      text: buildInvoiceText(data.body, message),
+      html: buildInvoiceHtml(data.body, message),
       attachments: [
         {
           filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),

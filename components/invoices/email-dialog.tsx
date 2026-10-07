@@ -183,6 +183,28 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
               />
             </label>
 
+            {/* Shown read-only: these figures are generated from the invoice
+                itself, never typed, so an edited message cannot contradict the
+                document attached to it. */}
+            <div className="rounded-xl border border-[#e4e3dd] bg-white p-4">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e8712b]">
+                Ajouté automatiquement au message
+              </p>
+              <dl className="grid gap-1.5">
+                {draft.summary.map(([label, value]) => (
+                  <div className="flex items-baseline justify-between gap-4 text-xs" key={label}>
+                    <dt className="shrink-0 text-[#6f7885]">{label}</dt>
+                    <dd className={`text-right text-[#172238] ${label === "Montant total" ? "font-semibold" : ""}`}>
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-3 border-t border-[#e4e3dd] pt-3 text-[11px] text-[#9ba1a7]">
+                Suivi des mentions légales (NINEA, RC) et de la pièce jointe.
+              </p>
+            </div>
+
             <div className="flex items-center gap-2 rounded-xl border border-[#e4e3dd] bg-white px-4 py-3 text-sm">
               <Paperclip className="shrink-0 text-[#6f7885]" size={16} />
               <span className="truncate font-medium text-[#172238]">{draft.attachmentName}</span>
