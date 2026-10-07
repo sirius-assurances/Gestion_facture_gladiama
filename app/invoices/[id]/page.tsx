@@ -26,7 +26,8 @@ import {
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
 import { generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
-import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
+import { openWhatsAppFallback, sharePDF } from "@/lib/share";
+import EmailDialog from "@/components/invoices/email-dialog";
 
 export default function InvoiceDetailsPage() {
   const params = useParams();
@@ -36,6 +37,7 @@ export default function InvoiceDetailsPage() {
   const [pdfStatus, setPdfStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [shareNotice, setShareNotice] = useState("");
   const [actionError, setActionError] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
 
   useEffect(() => {
     async function loadInvoice() {
@@ -187,7 +189,10 @@ export default function InvoiceDetailsPage() {
     }
   };
 
-  const handleShare = async (channel: "whatsapp" | "email") => {
+  // WhatsApp only now. Email goes through EmailDialog, which attaches the PDF
+  // for real — WhatsApp has no equivalent, so this still falls back to a
+  // download plus a prefilled message when the device cannot share a file.
+  const handleShare = async () => {
     setActionError("");
     const client = clients.find((item) => item.name === invoice.client);
     const data = getPdfData();
@@ -203,8 +208,7 @@ export default function InvoiceDetailsPage() {
     const result = await sharePDF(doc.output("blob"), fileName, invoice.client, invoice.number, totalFormatted, data.periodStart, data.periodEnd);
     if (result.success || result.method === "cancelled") return;
     doc.save(fileName);
-    if (channel === "whatsapp") openWhatsAppFallback(fileName, invoice.client, invoice.number, totalFormatted, client?.phone);
-    else openEmailFallback(fileName, invoice.client, invoice.number, totalFormatted, data.periodStart, data.periodEnd, client?.email);
+    openWhatsAppFallback(fileName, invoice.client, invoice.number, totalFormatted, client?.phone);
     setShareNotice("PDF téléchargé. Attachez-le dans votre conversation.");
     window.setTimeout(() => setShareNotice(""), 5000);
   };
@@ -464,7 +468,7 @@ export default function InvoiceDetailsPage() {
             <button
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-5 py-3 text-sm font-semibold text-white hover:bg-[#1db954]"
               type="button"
-              onClick={() => handleShare("whatsapp")}
+              onClick={handleShare}
             >
               <MessageCircle size={17} /> WhatsApp
             </button>
@@ -472,7 +476,7 @@ export default function InvoiceDetailsPage() {
             <button
               className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
               type="button"
-              onClick={() => handleShare("email")}
+              onClick={() => setEmailOpen(true)}
             >
               <Mail size={17} /> Email
             </button>
@@ -484,6 +488,21 @@ export default function InvoiceDetailsPage() {
           </aside>
         </div>
       </div>
+
+      {emailOpen && (
+        <EmailDialog
+          invoiceId={invoice.id}
+          invoiceNumber={invoice.number}
+          isDraft={!issued}
+          onClose={() => setEmailOpen(false)}
+          onSent={(markedAsSent) => {
+            setEmailOpen(false);
+            setActionError("");
+            setShareNotice(markedAsSent ? "Facture envoyée et marquée comme envoyée." : "Message envoyé.");
+            if (markedAsSent) updateField("status", "Envoyée");
+          }}
+        />
+      )}
     </main>
   );
 }

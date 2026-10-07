@@ -3,7 +3,9 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
-import { formatFrenchDate } from "@/lib/format";
+import { formatCfa, formatFrenchDate } from "@/lib/format";
+import { createTransport, formatSender, readMailerConfig } from "@/lib/email/mailer";
+import { buildAttachmentName, buildInvoiceBody, buildInvoiceSubject } from "@/lib/email/invoice-message";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { defaultClients, defaultInvoices } from "@/lib/seed-data";
 import { generateInvoicePdfBuffer } from "@/lib/pdf/server";
@@ -414,8 +416,17 @@ export async function generateAndStoreInvoicePdf(invoiceId: string) {
   const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, items: true } });
   if (!invoice) throw new Error("Facture introuvable.");
 
+  return storeInvoicePdf(invoice, await renderInvoicePdf(invoice));
+}
+
+type InvoiceWithRelations = Awaited<
+  ReturnType<typeof prisma.invoice.findMany<{ include: { client: true; items: true } }>>
+>[number];
+
+/** Shared by the stored-PDF route and the email attachment. */
+async function renderInvoicePdf(invoice: InvoiceWithRelations) {
   const item = invoice.items[0];
-  const pdf = await generateInvoicePdfBuffer({
+  return generateInvoicePdfBuffer({
     invoiceNumber: invoice.invoiceNumber,
     clientName: invoice.client.name,
     clientLocation: invoice.client.location,
@@ -434,8 +445,6 @@ export async function generateAndStoreInvoicePdf(invoiceId: string) {
     totalTva: Number(invoice.totalTva),
     totalTtc: Number(invoice.totalTtc),
   });
-
-  return storeInvoicePdf(invoice, pdf);
 }
 
 export async function getInvoicePdfUrl(invoiceId: string) {
@@ -447,6 +456,123 @@ export async function getInvoicePdfUrl(invoiceId: string) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.storage.from(PDF_BUCKET).createSignedUrl(invoice.pdfPath, 60);
   return error ? null : data.signedUrl;
+}
+
+const emailDraftSchema = z.object({
+  invoiceId: z.string().min(1),
+  to: z.string().trim().email("Adresse du destinataire invalide.").max(200),
+  cc: z.array(z.string().trim().email().max(200)).max(20).optional(),
+  replyTo: z.string().trim().email().max(200).optional(),
+  subject: z.string().trim().min(1, "Objet requis.").max(300),
+  body: z.string().trim().min(1, "Message requis.").max(20_000),
+  // Unticked while testing, so a trial run to one's own address does not
+  // mark a real invoice as sent to the client.
+  markAsSent: z.boolean(),
+});
+
+export type InvoiceEmailDraft = {
+  from: string;
+  to: string;
+  subject: string;
+  body: string;
+  attachmentName: string;
+  configured: boolean;
+  missing: string[];
+};
+
+/**
+ * Everything the compose dialog opens with. The sender comes from the
+ * server because only it knows the configured mailbox, and the dialog has
+ * to show what will actually appear in the client's inbox.
+ */
+export async function getInvoiceEmailDraft(invoiceId: string): Promise<InvoiceEmailDraft> {
+  await requireUser();
+  const id = z.string().min(1).parse(invoiceId);
+  const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, items: true } });
+  if (!invoice) throw new Error("Facture introuvable.");
+
+  const mailer = readMailerConfig();
+  const message = {
+    invoiceNumber: invoice.invoiceNumber,
+    clientName: invoice.client.name,
+    totalFormatted: formatCfa(Number(invoice.totalTtc)),
+    periodStart: formatFrenchDate(invoice.periodStart),
+    periodEnd: formatFrenchDate(invoice.periodEnd),
+  };
+
+  return {
+    from: mailer.ok ? formatSender(mailer.config) : "",
+    to: invoice.client.email ?? "",
+    subject: buildInvoiceSubject(message),
+    body: buildInvoiceBody(message),
+    attachmentName: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
+    configured: mailer.ok,
+    missing: mailer.ok ? [] : mailer.missing,
+  };
+}
+
+/**
+ * Sends the invoice with its PDF attached. Unlike the mailto: link this
+ * replaces, the attachment is real — mailto cannot carry a file at all, so
+ * the message used to ask the client's supplier to attach it by hand.
+ *
+ * The invoice is only marked as sent once the mail server has accepted the
+ * message, and the PDF is archived first: storeInvoicePdf refuses to write
+ * for an issued invoice, so the order here is what guarantees the archived
+ * document is exactly the one that went out.
+ */
+export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) {
+  const user = await requireUser();
+  const data = emailDraftSchema.parse(input);
+
+  const mailer = readMailerConfig();
+  if (!mailer.ok) {
+    throw new Error(`Envoi non configuré. Variables manquantes : ${mailer.missing.join(", ")}.`);
+  }
+
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: data.invoiceId },
+    include: { client: true, items: true },
+  });
+  if (!invoice) throw new Error("Facture introuvable.");
+
+  const pdf = await renderInvoicePdf(invoice);
+  await storeInvoicePdf(invoice, pdf);
+
+  const transport = createTransport(mailer.config);
+  try {
+    await transport.sendMail({
+      from: formatSender(mailer.config),
+      to: data.to,
+      cc: data.cc?.length ? data.cc : undefined,
+      replyTo: data.replyTo || mailer.config.replyTo,
+      // SMTP only sends; it files nothing in the sender's mailbox. Without
+      // this the sender keeps no record of what left.
+      bcc: mailer.config.fromEmail,
+      subject: data.subject,
+      text: data.body,
+      attachments: [
+        {
+          filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
+          content: pdf,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+  } catch (error) {
+    // Surfaced verbatim: "535 authentication failed" tells the user to fix
+    // the app password, where "envoi impossible" would not.
+    throw new Error(`Envoi refusé par le serveur de messagerie : ${error instanceof Error ? error.message : "erreur inconnue"}`);
+  }
+
+  if (data.markAsSent && !isInvoiceIssued(statusFromDb[invoice.status])) {
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: "SENT", updatedByEmail: user.email },
+    });
+  }
+
+  return { sentTo: data.to, cc: data.cc ?? [] };
 }
 
 export async function getClientsPage(params: { page?: number; pageSize?: number; search?: string } = {}) {

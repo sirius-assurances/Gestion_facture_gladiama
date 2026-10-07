@@ -121,6 +121,26 @@ describe("billing Server Actions without an authenticated session", () => {
     await expect(generateAndStoreInvoicePdf("inv-1")).rejects.toThrow("Authentification requise.");
   });
 
+  it("getInvoiceEmailDraft rejects", async () => {
+    const { getInvoiceEmailDraft } = await import("@/app/actions/billing");
+    await expect(getInvoiceEmailDraft("inv-1")).rejects.toThrow("Authentification requise.");
+  });
+
+  // The one action that reaches outside the app entirely: an unauthenticated
+  // caller must never be able to make it send mail.
+  it("sendInvoiceEmail rejects", async () => {
+    const { sendInvoiceEmail } = await import("@/app/actions/billing");
+    await expect(
+      sendInvoiceEmail({
+        invoiceId: "inv-1",
+        to: "client@exemple.com",
+        subject: "Facture",
+        body: "Bonjour",
+        markAsSent: false,
+      }),
+    ).rejects.toThrow("Authentification requise.");
+  });
+
   it("getInvoicePdfUrl rejects", async () => {
     const { getInvoicePdfUrl } = await import("@/app/actions/billing");
     await expect(getInvoicePdfUrl("inv-1")).rejects.toThrow("Authentification requise.");
