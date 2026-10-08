@@ -17,7 +17,8 @@
     "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "test:db:prepare": "node scripts/prepare-test-db.mjs",
-    "test:integration": "vitest run --config vitest.integration.config.mts"
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "check:smtp": "node --env-file=.env scripts/check-smtp.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
