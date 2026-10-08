@@ -401,20 +401,6 @@ async function storeInvoicePdf(
   return path;
 }
 
-// Stores the already-generated PDF (built client-side with jsPDF, base64
-// encoded) in Supabase Storage so it can be re-downloaded later without
-// regenerating it. The bucket is private; access is via short-lived signed
-// URLs only (see getInvoicePdfUrl).
-export async function saveInvoicePdf(invoiceId: string, pdfBase64: string) {
-  await requireUser();
-  const id = z.string().min(1).parse(invoiceId);
-  const base64 = z.string().min(1).max(15_000_000).parse(pdfBase64);
-  const invoice = await prisma.invoice.findUnique({ where: { id } });
-  if (!invoice) throw new Error("Facture introuvable.");
-
-  await storeInvoicePdf(invoice, Buffer.from(base64, "base64"));
-}
-
 /**
  * Builds the invoice PDF on the server, from the database alone, and stores
  * it. Nothing here needs a browser — which is the point: an invoice can be

@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Download, ExternalLink, Eye, FileText, Mail, MessageCircle, Save } from "lucide-react";
+import { ArrowLeft, Download, Eye, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
+  generateAndStoreInvoicePdf,
   getClients,
   getInvoice,
   getInvoicePdfUrl,
-  saveInvoicePdf,
   updateInvoice,
   updateInvoiceStatus as updateInvoiceStatusInDatabase,
 } from "@/app/actions/billing";
@@ -25,7 +25,6 @@ import {
 } from "@/lib/invoice";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { formatCfa, formatFrenchDate } from "@/lib/format";
-import { generateInvoiceDocument, type InvoicePdfData } from "@/lib/pdf/generator";
 import { openWhatsAppFallback, sharePDF } from "@/lib/share";
 import EmailDialog from "@/components/invoices/email-dialog";
 
@@ -34,7 +33,7 @@ export default function InvoiceDetailsPage() {
   const router = useRouter();
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null);
   const [clients, setClients] = useState<ClientRecord[]>([]);
-  const [pdfStatus, setPdfStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [pdfPending, setPdfPending] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
   const [actionError, setActionError] = useState("");
   const [emailOpen, setEmailOpen] = useState(false);
@@ -97,117 +96,104 @@ export default function InvoiceDetailsPage() {
     }
   };
 
-  const getPdfData = (): InvoicePdfData => {
-    const client = clients.find((item) => item.name === invoice.client);
-    return {
-      invoiceNumber: invoice.number,
-      clientName: invoice.client,
-      clientLocation: client?.location ?? "Dakar, Sénégal",
-      projectName: client?.projectName,
-      marketNumber: client?.marketNumber,
-      contractNumber: client?.contractNumber,
-      periodStart: formatFrenchDate(invoice.periodStart),
-      periodEnd: formatFrenchDate(invoice.periodEnd),
-      designation: invoice.designation,
-      quantity: invoice.quantity,
-      unitPrice: invoice.unitPrice,
-      hasTva: invoice.hasTva,
-      totalHt: totals.totalHt,
-      totalTva: totals.totalTva,
-      totalTtc: totals.totalTtc,
-    };
+  /**
+   * The PDF comes from the server, built from the database.
+   *
+   * The browser used to generate it here and post it back base64-encoded
+   * through a Server Action. That capped the payload at roughly 1MB, and —
+   * worse — stored whatever was currently in the form, so an unsaved edit
+   * could become the invoice's archived document while the database still
+   * held the old figures. Asking the server removes both problems: what is
+   * stored is always what the ledger says.
+   *
+   * For an invoice already issued, storeInvoicePdf declines to overwrite, so
+   * this returns the archived document rather than a new rendering of it.
+   */
+  const getPdfUrl = async () => {
+    await generateAndStoreInvoicePdf(invoice.id);
+    const url = await getInvoicePdfUrl(invoice.id);
+    if (!url) throw new Error("Le PDF de cette facture est introuvable.");
+    setInvoice((current) => (current ? { ...current, hasStoredPdf: true } : current));
+    return url;
+  };
+
+  // Saved through a same-origin blob: the download attribute is ignored on a
+  // cross-origin URL, which would open the PDF in a viewer instead of saving
+  // it under the invoice's own name.
+  const saveBlob = (blob: Blob, fileName: string) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(objectUrl);
   };
 
   const handleDownloadPdf = async () => {
     setActionError("");
-    let doc;
+    setPdfPending(true);
     try {
-      doc = await generateInvoiceDocument(getPdfData());
-      doc.save(`facture-${invoice.number.replace(/[^a-z0-9]/gi, "-")}.pdf`);
-    } catch {
-      // Until this was surfaced, a failure here looked like a dead button:
-      // the PDF never appeared and nothing explained why.
-      setActionError("Impossible de générer le PDF de cette facture.");
-      return;
-    }
-
-    // Persist the same PDF to Supabase Storage so it can be re-downloaded
-    // later without regenerating it. Best-effort: the local download above
-    // already succeeded either way.
-    setPdfStatus("saving");
-    try {
-      const dataUri = doc.output("datauristring");
-      const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
-      await saveInvoicePdf(invoice.id, base64);
-      setInvoice((current) => (current ? { ...current, hasStoredPdf: true } : current));
-      setPdfStatus("saved");
-    } catch {
-      setPdfStatus("error");
+      const blob = await (await fetch(await getPdfUrl())).blob();
+      saveBlob(blob, `facture-${invoice.number.replace(/[^a-z0-9]/gi, "-")}.pdf`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Impossible de générer le PDF de cette facture.");
+    } finally {
+      setPdfPending(false);
     }
   };
 
   // Safari (desktop and iOS) only treats window.open() as user-initiated —
   // and skips its popup blocker — when it's called synchronously inside the
-  // click handler. Any `await` beforehand (fetching the signed URL,
-  // generating the PDF) loses that association and the tab gets silently
-  // blocked. Opening a blank tab immediately, then pointing it at the real
-  // URL once it's ready, keeps it inside the user-gesture window.
-  // Inline iframe/embed PDF preview isn't used here because iOS Safari does
-  // not render embedded PDFs at all (a platform limitation, not something
-  // fixable in CSS/JS) — a new tab uses the browser's own PDF viewer, which
-  // every browser, including iOS Safari, supports.
+  // click handler. Any `await` beforehand loses that association and the tab
+  // gets silently blocked. Opening a blank tab immediately, then pointing it
+  // at the real URL once it's ready, keeps it inside the user-gesture window.
   //
-  // The tab is also never pointed at a local blob: URL — Safari can't
-  // resolve a blob created in the opener's context from a different
-  // browsing context (the new tab), which renders as a blank white page.
-  // Chrome tolerates this; Safari doesn't. Uploading to Storage first and
-  // navigating to the real https:// signed URL sidesteps that entirely.
-  const handleViewStoredPdf = async () => {
-    const tab = window.open("", "_blank");
-    const url = await getInvoicePdfUrl(invoice.id);
-    if (!tab) return;
-    if (url) tab.location.href = url;
-    else tab.close();
-  };
-
+  // The tab is never pointed at a local blob: URL either — Safari can't
+  // resolve a blob created in the opener's context from another browsing
+  // context, which renders as a blank white page. Chrome tolerates this;
+  // Safari doesn't. A real https:// signed URL sidesteps it entirely.
   const handleViewPdf = async () => {
     setActionError("");
     const tab = window.open("", "_blank");
     try {
-      const doc = await generateInvoiceDocument(getPdfData());
-      const dataUri = doc.output("datauristring");
-      const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
-      await saveInvoicePdf(invoice.id, base64);
-      setInvoice((current) => (current ? { ...current, hasStoredPdf: true } : current));
-      const url = await getInvoicePdfUrl(invoice.id);
+      const url = await getPdfUrl();
       if (!tab) return;
-      if (url) tab.location.href = url;
-      else tab.close();
+      tab.location.href = url;
     } catch {
       tab?.close();
       setActionError("Impossible d'ouvrir le PDF de cette facture.");
     }
   };
 
-  // WhatsApp only now. Email goes through EmailDialog, which attaches the PDF
-  // for real — WhatsApp has no equivalent, so this still falls back to a
-  // download plus a prefilled message when the device cannot share a file.
+  // WhatsApp has no equivalent of an email attachment: the native share sheet
+  // can carry the file, and where it can't, the PDF is downloaded and the
+  // message prefilled so it can be attached by hand.
   const handleShare = async () => {
     setActionError("");
     const client = clients.find((item) => item.name === invoice.client);
-    const data = getPdfData();
     const fileName = `Facture_${invoice.number.replace(/[^a-z0-9]/gi, "_")}_${invoice.client.replace(/\s+/g, "_")}.pdf`;
     const totalFormatted = formatCfa(totals.totalTtc);
-    let doc;
+
+    let blob;
     try {
-      doc = await generateInvoiceDocument(data);
+      blob = await (await fetch(await getPdfUrl())).blob();
     } catch {
-      setActionError("Impossible de générer le PDF à partager.");
+      setActionError("Impossible de préparer le PDF à partager.");
       return;
     }
-    const result = await sharePDF(doc.output("blob"), fileName, invoice.client, invoice.number, totalFormatted, data.periodStart, data.periodEnd);
+
+    const result = await sharePDF(
+      blob,
+      fileName,
+      invoice.client,
+      invoice.number,
+      totalFormatted,
+      formatFrenchDate(invoice.periodStart),
+      formatFrenchDate(invoice.periodEnd),
+    );
     if (result.success || result.method === "cancelled") return;
-    doc.save(fileName);
+
+    saveBlob(blob, fileName);
     openWhatsAppFallback(fileName, invoice.client, invoice.number, totalFormatted, client?.phone);
     setShareNotice("PDF téléchargé. Attachez-le dans votre conversation.");
     window.setTimeout(() => setShareNotice(""), 5000);
@@ -438,24 +424,12 @@ export default function InvoiceDetailsPage() {
             <button
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
               type="button"
-              disabled={pdfStatus === "saving"}
+              disabled={pdfPending}
               onClick={handleDownloadPdf}
             >
-              <Download size={17} /> {pdfStatus === "saving" ? "Enregistrement..." : "Télécharger le PDF"}
+              <Download size={17} /> {pdfPending ? "Préparation…" : "Télécharger le PDF"}
             </button>
 
-            {invoice.hasStoredPdf && (
-              <button
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold text-white/60 hover:text-white"
-                type="button"
-                onClick={handleViewStoredPdf}
-              >
-                <ExternalLink size={13} /> Voir la dernière version enregistrée
-              </button>
-            )}
-            {pdfStatus === "error" && (
-              <p className="mt-2 text-center text-xs text-[#e8a0a0]">Le PDF a été téléchargé mais pas sauvegardé en ligne. Réessayez plus tard.</p>
-            )}
 
             <button
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
