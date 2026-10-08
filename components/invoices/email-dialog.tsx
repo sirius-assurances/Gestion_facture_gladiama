@@ -41,6 +41,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
         if (!active) return;
         setDraft(result);
         setTo(result.to);
+        setCc(result.cc);
         setSubject(result.subject);
         setBody(result.body);
       })

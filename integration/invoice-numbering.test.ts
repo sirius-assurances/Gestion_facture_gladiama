@@ -69,6 +69,32 @@ describe("invoice numbering", () => {
   });
 });
 
+describe("client copy recipients", () => {
+  // Stored as a Postgres array rather than a delimited string, so the
+  // database never has to guess a separator and an address can never be
+  // split in two by one.
+  it("round-trips several addresses", async () => {
+    const client = await prisma.client.create({
+      data: {
+        name: "SOGEA SATOM",
+        location: "Dakar, Sénégal",
+        defaultUnitPrice: "600.00",
+        hasTva: false,
+        ccEmails: ["comptabilite@exemple.com", "direction@exemple.com"],
+      },
+    });
+
+    const stored = await prisma.client.findUniqueOrThrow({ where: { id: client.id } });
+    expect(stored.ccEmails).toEqual(["comptabilite@exemple.com", "direction@exemple.com"]);
+  });
+
+  it("defaults to none rather than null, so callers never guard for it", async () => {
+    const client = await createClient("GRANUSEN");
+
+    expect(client.ccEmails).toEqual([]);
+  });
+});
+
 describe("invoice relations", () => {
   it("deletes an invoice's items with it", async () => {
     const client = await createClient("PFO AFRICA");

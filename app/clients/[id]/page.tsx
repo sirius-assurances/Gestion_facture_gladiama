@@ -5,17 +5,23 @@ import { ArrowLeft, Save } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getClient, updateClient } from "@/app/actions/billing";
+import { parseRecipients } from "@/lib/email/invoice-message";
 import type { ClientRecord } from "@/lib/invoice";
 
 export default function ClientEditPage() {
   const params = useParams();
   const router = useRouter();
   const [client, setClient] = useState<ClientRecord | null>(null);
+  // Held as raw text while editing so a half-typed address is not thrown
+  // away mid-keystroke; parsed into the stored array on save.
+  const [ccEmails, setCcEmails] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     async function loadClient() {
       const found = await getClient(params.id as string);
       setClient(found);
+      setCcEmails(found?.ccEmails?.join(", ") ?? "");
     }
     void loadClient();
   }, [params.id]);
@@ -35,7 +41,15 @@ export default function ClientEditPage() {
   };
 
   const handleSave = async () => {
-    await updateClient(client);
+    setSaveError("");
+    try {
+      await updateClient({ ...client, ccEmails: parseRecipients(ccEmails) });
+    } catch (error) {
+      // Without this the button looked dead: a rejected save left the form
+      // untouched and said nothing at all.
+      setSaveError(error instanceof Error ? error.message : "Enregistrement impossible.");
+      return;
+    }
     router.push("/clients");
   };
 
@@ -98,6 +112,24 @@ export default function ClientEditPage() {
             </label>
 
             <label className="block sm:col-span-2">
+              <span className="mb-2 block text-sm font-semibold">Emails en copie</span>
+              {/* Edited as free text and parsed on save: people paste lists
+                  separated by commas, semicolons or line breaks, and the
+                  stored value is a clean array either way. */}
+              <input
+                className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"
+                onChange={(event) => setCcEmails(event.target.value)}
+                placeholder="comptabilite@example.com, direction@example.com"
+                value={ccEmails}
+              />
+              <span className="mt-1.5 block text-xs text-[#6f7885]">
+                {ccEmails.trim()
+                  ? `${parseRecipients(ccEmails).length} adresse(s) retenue(s) : ${parseRecipients(ccEmails).join(", ") || "aucune"}`
+                  : "Mis en copie de chaque facture envoyée à ce client. Séparez par des virgules."}
+              </span>
+            </label>
+
+            <label className="block sm:col-span-2">
               <span className="mb-2 block text-sm font-semibold">Projet</span>
               <input
                 className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"
@@ -149,6 +181,10 @@ export default function ClientEditPage() {
               />
             </label>
           </div>
+
+          {saveError && (
+            <p className="mt-6 rounded-xl border border-[#c13a3a]/30 bg-[#c13a3a]/5 p-4 text-sm text-[#c13a3a]">{saveError}</p>
+          )}
 
           <div className="mt-8 flex items-center justify-end">
             <button

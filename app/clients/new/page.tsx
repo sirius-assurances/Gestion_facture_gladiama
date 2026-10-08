@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { createClient } from "@/app/actions/billing";
+import { parseRecipients } from "@/lib/email/invoice-message";
 
 export default function NewClientPage() {
   const [saved, setSaved] = useState(false);
@@ -19,6 +20,7 @@ export default function NewClientPage() {
       location: String(data.get("location") ?? "").trim() || "Dakar, Sénégal",
       phone: String(data.get("phone") || ""),
       email: String(data.get("email") || ""),
+      ccEmails: parseRecipients(String(data.get("ccEmails") || "")),
       projectName: String(data.get("projectName") || ""),
       marketNumber: String(data.get("marketNumber") || ""),
       contractNumber: String(data.get("contractNumber") || ""),
@@ -65,6 +67,14 @@ export default function NewClientPage() {
             <label className="block">
               <span className="mb-2 block text-sm font-semibold">Email (optionnel)</span>
               <input name="email" type="email" placeholder="client@example.com" className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]" />
+            </label>
+
+            <label className="block sm:col-span-2">
+              <span className="mb-2 block text-sm font-semibold">Emails en copie (optionnel)</span>
+              <input name="ccEmails" placeholder="comptabilite@example.com, direction@example.com" className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]" />
+              <span className="mt-1.5 block text-xs text-[#6f7885]">
+                Mis en copie de chaque facture envoyée à ce client. Séparez par des virgules.
+              </span>
             </label>
 
             <label className="block sm:col-span-2">

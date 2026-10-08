@@ -14,6 +14,8 @@ model Client {
   location         String    @default("Dakar, Sénégal")
   phone            String?
   email            String?
+  /// Copied on every invoice email for this client (see migration 0006).
+  ccEmails         String[]  @default([])
   projectName      String?
   marketNumber     String?
   contractNumber   String?

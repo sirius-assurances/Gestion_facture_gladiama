@@ -6,6 +6,8 @@ export type ClientRecord = {
   location: string;
   phone?: string;
   email?: string;
+  /** Copied on every invoice email for this client. */
+  ccEmails?: string[];
   projectName?: string;
   marketNumber?: string;
   contractNumber?: string;

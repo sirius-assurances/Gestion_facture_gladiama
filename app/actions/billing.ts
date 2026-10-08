@@ -35,6 +35,8 @@ const clientInputSchema = z.object({
   location: z.string().trim().min(1, "Localisation requise.").max(200),
   phone: z.string().trim().max(30).optional(),
   email: z.string().trim().email("Email invalide.").max(200).optional().or(z.literal("")),
+  // Pre-parsed by the form, so anything arriving here is already an address.
+  ccEmails: z.array(z.string().trim().email("Email en copie invalide.").max(200)).max(20).optional(),
   projectName: z.string().trim().max(300).optional(),
   marketNumber: z.string().trim().max(120).optional(),
   contractNumber: z.string().trim().max(120).optional(),
@@ -115,6 +117,7 @@ function mapClient(client: Awaited<ReturnType<typeof prisma.client.findMany>>[nu
     location: client.location,
     phone: client.phone ?? undefined,
     email: client.email ?? undefined,
+    ccEmails: client.ccEmails,
     projectName: client.projectName ?? undefined,
     marketNumber: client.marketNumber ?? undefined,
     contractNumber: client.contractNumber ?? undefined,
@@ -481,6 +484,8 @@ const emailDraftSchema = z.object({
 export type InvoiceEmailDraft = {
   from: string;
   to: string;
+  /** From the client record; the sender can still change it for one message. */
+  cc: string;
   subject: string;
   body: string;
   /** Appended automatically; shown read-only so the sender knows it is coming. */
@@ -535,6 +540,7 @@ export async function getInvoiceEmailDraft(invoiceId: string): Promise<InvoiceEm
   return {
     from: mailer.ok ? formatSender(mailer.config) : "",
     to: invoice.client.email ?? "",
+    cc: invoice.client.ccEmails.join(", "),
     subject: buildInvoiceSubject(message),
     body: buildInvoiceLetter(message),
     summary: buildInvoiceSummary(message),
@@ -660,6 +666,7 @@ export async function createClient(input: Omit<ClientRecord, "id">) {
       defaultUnitPrice: amount(data.defaultUnitPrice),
       phone: data.phone || null,
       email: data.email || null,
+      ccEmails: data.ccEmails ?? [],
       projectName: data.projectName || null,
       marketNumber: data.marketNumber || null,
       contractNumber: data.contractNumber || null,
@@ -680,6 +687,7 @@ export async function updateClient(client: ClientRecord) {
       location: data.location,
       phone: data.phone || null,
       email: data.email || null,
+      ccEmails: data.ccEmails ?? [],
       projectName: data.projectName || null,
       marketNumber: data.marketNumber || null,
       contractNumber: data.contractNumber || null,
