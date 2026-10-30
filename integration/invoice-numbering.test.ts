@@ -95,6 +95,61 @@ describe("client copy recipients", () => {
   });
 });
 
+describe("moving the sequence's starting point", () => {
+  // Mirrors setNextInvoiceNumber in app/actions/billing.ts: setval(seq, n,
+  // false) so the very next nextval() returns n unchanged, rather than n+1.
+  async function setNext(n: number) {
+    await prisma.$executeRawUnsafe(`SELECT setval('facturation.invoice_number_seq', ${n}, false)`);
+  }
+
+  // The exact query setNextInvoiceNumber runs to find the current highest
+  // number, against real "N°NN" rows — not a synthetic string. This is what
+  // caught a real bug: '\D' silently matched nothing in this database's
+  // regex engine, leaving "N°29" unstripped and failing to cast to int. The
+  // POSIX class '[^[:digit:]]' is what actually works here.
+  async function maxInvoiceNumber() {
+    const [{ max }] = await prisma.$queryRaw<{ max: number | null }[]>`
+      SELECT MAX(NULLIF(regexp_replace("invoiceNumber", '[^[:digit:]]', '', 'g'), '')::int) AS max
+      FROM facturation."Invoice"
+    `;
+    return max;
+  }
+
+  it("reads the highest number out of real N°NN rows", async () => {
+    const client = await createClient("SOGEA SATOM");
+    await prisma.invoice.create({ data: invoiceData(client.id, "N°28") });
+    await prisma.invoice.create({ data: invoiceData(client.id, "N°29") });
+    await prisma.invoice.create({ data: invoiceData(client.id, "N°30") });
+
+    expect(await maxInvoiceNumber()).toBe(30);
+  });
+
+  it("returns null rather than throwing when the table is empty", async () => {
+    expect(await maxInvoiceNumber()).toBeNull();
+  });
+
+  it("the next number created matches exactly, with no off-by-one", async () => {
+    await setNext(36);
+
+    expect(await nextInvoiceNumber(prisma)).toBe("N°36");
+  });
+
+  it("numbering then continues forward automatically", async () => {
+    await setNext(36);
+
+    expect(await nextInvoiceNumber(prisma)).toBe("N°36");
+    expect(await nextInvoiceNumber(prisma)).toBe("N°37");
+    expect(await nextInvoiceNumber(prisma)).toBe("N°38");
+  });
+
+  it("can move the sequence backward too, for correcting a mistake", async () => {
+    await setNext(50);
+    await setNext(40);
+
+    expect(await nextInvoiceNumber(prisma)).toBe("N°40");
+  });
+});
+
 describe("invoice relations", () => {
   it("deletes an invoice's items with it", async () => {
     const client = await createClient("PFO AFRICA");

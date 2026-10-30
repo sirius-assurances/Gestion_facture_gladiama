@@ -125,3 +125,24 @@ export function isInvoiceIssued(status: InvoiceStatus): boolean {
 
 export const INVOICE_ISSUED_MESSAGE =
   "Cette facture a déjà été émise. Repassez-la en brouillon pour la corriger — le document envoyé au client sera archivé.";
+
+/**
+ * Checked before moving the invoice-number sequence's starting point (see
+ * setNextInvoiceNumber in app/actions/billing.ts). This exists for the case
+ * where invoices were issued outside the app — on paper, or in a previous
+ * tool — and numbering here needs to pick up where those left off, rather
+ * than restart from whatever the sequence currently holds.
+ *
+ * Only ever moves the *next* number forward; an invoice already saved here
+ * keeps the number it was given and is never touched by this.
+ */
+export function validateNextInvoiceNumber(next: number, currentMax: number | null): string | null {
+  if (!Number.isInteger(next) || next < 1) return "Le numéro doit être un entier positif.";
+  // A number at or below what is already in the table would collide with an
+  // existing invoice the moment one more is created — reject it here with a
+  // clear reason instead of letting that surface as a raw database error.
+  if (currentMax !== null && next <= currentMax) {
+    return `Le prochain numéro doit être supérieur à la dernière facture enregistrée ici (N°${currentMax}).`;
+  }
+  return null;
+}

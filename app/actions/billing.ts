@@ -17,7 +17,14 @@ import {
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { defaultClients, defaultInvoices } from "@/lib/seed-data";
 import { generateInvoicePdfBuffer } from "@/lib/pdf/server";
-import { INVOICE_ISSUED_MESSAGE, isInvoiceIssued, type ClientRecord, type InvoiceRecord, type InvoiceStatus } from "@/lib/invoice";
+import {
+  INVOICE_ISSUED_MESSAGE,
+  isInvoiceIssued,
+  validateNextInvoiceNumber,
+  type ClientRecord,
+  type InvoiceRecord,
+  type InvoiceStatus,
+} from "@/lib/invoice";
 
 const statusToDb: Record<InvoiceStatus, "DRAFT" | "SENT" | "PAID"> = {
   Brouillon: "DRAFT",
@@ -333,6 +340,41 @@ export async function getNextInvoiceNumber() {
   `;
   const next = sequence.is_called ? Number(sequence.last_value) + 1 : Number(sequence.last_value);
   return `N°${next}`;
+}
+
+/**
+ * Moves the sequence's starting point forward — for when invoices were
+ * issued outside the app (paper, a previous tool) and numbering here needs
+ * to continue from there rather than from wherever the sequence currently
+ * sits. Set once; every invoice created after this picks up automatically.
+ *
+ * Only the *next* number moves. An invoice already saved keeps the number it
+ * was given — this never touches existing rows.
+ */
+export async function setNextInvoiceNumber(nextNumber: number) {
+  await requireUser();
+  const next = z.number().finite().parse(nextNumber);
+
+  // The POSIX character class, not \D: verified against the real database
+  // that \D silently matches nothing here and leaves "N°29" unstripped,
+  // which then fails to cast to int. Migration 0003 carries the same \D and
+  // never caught this, only because it first ran against an empty table —
+  // the MAX subquery returned no rows, so the broken regex was never
+  // actually exercised. Left as-is there; already applied, checksum locked.
+  const [{ max }] = await prisma.$queryRaw<{ max: number | null }[]>`
+    SELECT MAX(NULLIF(regexp_replace("invoiceNumber", '[^[:digit:]]', '', 'g'), '')::int) AS max
+    FROM facturation."Invoice"
+  `;
+  const error = validateNextInvoiceNumber(next, max);
+  if (error) throw new Error(error);
+
+  // is_called = false: the very next nextval() returns `next` unchanged
+  // rather than next + 1 — the same convention getNextInvoiceNumber already
+  // reads (see its comment) and the one migration 0003 used to first align
+  // the sequence with the table.
+  await prisma.$queryRaw`SELECT setval('facturation.invoice_number_seq', ${next}, false)`;
+
+  return getNextInvoiceNumber();
 }
 
 export async function getInvoice(invoiceId: string) {

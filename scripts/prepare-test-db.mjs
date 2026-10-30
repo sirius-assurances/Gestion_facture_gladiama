@@ -28,6 +28,14 @@ const STORAGE_STUB = `
     CREATE ROLE authenticated;
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;
+  -- Migration 0007 grants a privilege to facturation_app, the role the real
+  -- app connects as in Supabase. That role is provisioned by hand there, not
+  -- by any migration, so it does not exist on this disposable database —
+  -- create it here too, for the same reason "authenticated" is stubbed above.
+  DO $$ BEGIN
+    CREATE ROLE facturation_app;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
 `;
 
 const client = new pg.Client({ connectionString: DATABASE_URL });

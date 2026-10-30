@@ -1,6 +1,6 @@
 # Progression du projet
 
-Dernière mise à jour : 2026-10-11
+Dernière mise à jour : 2026-10-30
 
 ## Objectif
 
@@ -11,12 +11,34 @@ génération des PDF et **envoi par email**, sur PostgreSQL Supabase (schéma
 ## État actuel
 
 L'application est **en production et fonctionnelle**, envoi d'emails compris.
-Base Supabase à jour (6 migrations appliquées), authentification Supabase par
-cookies, deux comptes utilisateurs aux droits identiques.
+Base Supabase à jour (6 migrations appliquées ; une 7ᵉ écrite et en attente
+d'application manuelle, voir *Action requise* ci-dessous). Authentification
+Supabase par cookies, deux comptes utilisateurs aux droits identiques.
 
-Qualité : 87 tests unitaires, 8 tests d'intégration (vraie base), 11 tests E2E
-actifs + 1 ignoré par défaut (vrai navigateur), et un CI GitHub Actions qui
-exécute tout sauf les E2E à chaque push (voir *Reste à faire*).
+Qualité : 94 tests unitaires, 13 tests d'intégration (vraie base), 11 tests
+E2E actifs + 1 ignoré par défaut (vrai navigateur), et un CI GitHub Actions
+qui exécute tout sauf les E2E à chaque push (voir *Reste à faire*).
+
+## ⚠️ Action requise : migration 0007 pas encore appliquée en production
+
+`prisma/migrations/0007_grant_sequence_update/migration.sql` accorde au rôle
+applicatif `facturation_app` le privilège `UPDATE` sur
+`invoice_number_seq`, nécessaire pour la nouvelle fonctionnalité de
+correction du prochain numéro de facture (voir section suivante). Le rôle a
+`USAGE` (suffisant pour `nextval()`, donc la création de facture marche déjà)
+mais pas `UPDATE` (nécessaire pour `setval()`). **Pas de connecteur Supabase
+disponible sur ce projet** (`skhuhhmyhkjqnlgixnga`, compte différent de celui
+accessible par l'outil MCP) : l'utilisateur doit coller et exécuter cette
+ligne dans l'éditeur SQL Supabase, comme pour la migration 0006 :
+
+```sql
+GRANT UPDATE ON SEQUENCE "facturation"."invoice_number_seq" TO facturation_app;
+```
+
+Tant que ce n'est pas fait, cliquer sur le crayon pour modifier le prochain
+numéro de facture échoue avec `permission denied for sequence
+invoice_number_seq` (erreur 500 complète en journal serveur). Le reste de
+l'app n'est pas affecté.
 
 ## Démarrer
 
@@ -108,6 +130,41 @@ Repasser en « Brouillon » est le seul moyen de corriger, et ça archive
 d'abord le PDF émis sous un nom horodaté (best-effort : un échec d'archivage
 ne doit jamais bloquer la correction).
 
+## Corriger le prochain numéro de facture (octobre 2026, migration en attente)
+
+Besoin réel : des factures ont été émises **hors de l'app** (papier, autre
+outil) jusqu'à un certain numéro, et la numérotation ici doit reprendre à la
+suite plutôt que de rester où en était la séquence Postgres. **Ce n'est pas
+un champ éditable sur une facture existante** — un numéro déjà attribué reste
+fixe, cohérent avec le verrou ci-dessus. C'est le **point de départ** du
+compteur qui se déplace, une fois, puis la numérotation continue seule.
+
+- `setNextInvoiceNumber` (`app/actions/billing.ts`) : `setval()` sur
+  `invoice_number_seq` avec `is_called = false`, pour que le `nextval()`
+  suivant renvoie exactement la valeur demandée (même convention que
+  `getNextInvoiceNumber` et que la migration 0003 au tout premier réglage).
+  Validé contre `validateNextInvoiceNumber` (`lib/invoice.ts`, pur, testé
+  unitairement) : refuse tout numéro ≤ au plus grand numéro déjà en base, ce
+  qui provoquerait une collision à la prochaine création.
+- Interface : petit crayon à côté de « Facture N°… » sur l'écran de création
+  (`components/invoices/invoice-form.tsx`), édition en ligne, Entrée pour
+  valider, Échap pour annuler.
+- **Deux bugs réels trouvés et corrigés en construisant ceci** (voir aussi
+  *Pièges connus*) :
+  1. Le motif `regexp_replace(..., '\D', '', 'g')` — copié de la migration
+     0003 — ne fonctionne **pas** sur cette instance Postgres : `\D` n'y
+     retire rien, `"N°29"` reste `"N°29"` et le cast en entier échoue. Le
+     code neuf utilise `[^[:digit:]]`, vérifié en lecture directe contre la
+     vraie base. La migration 0003 n'a jamais été touchée (déjà appliquée,
+     empreinte verrouillée) — elle n'a simplement jamais rencontré ce bug
+     car elle a tourné sur une table encore vide.
+  2. `permission denied for sequence invoice_number_seq` : le rôle
+     `facturation_app` n'avait que `USAGE` (suffisant pour `nextval()`,
+     jamais mis à l'épreuve avant) mais pas `UPDATE` (nécessaire pour
+     `setval()`) — deux privilèges Postgres distincts sur une séquence.
+     D'où la migration 0007, **pas encore appliquée** (voir section
+     *Action requise* en haut de ce fichier).
+
 ## Pièges connus (chèrement acquis)
 
 - **Port de dev** : une autre application de la machine (BILMS) occupe le
@@ -138,6 +195,25 @@ ne doit jamais bloquer la correction).
 - **Migration 0005** touche le schéma `storage` propre à Supabase. Elle ne
   peut pas être modifiée (empreinte déjà enregistrée en production) : la base
   de test reçoit un stub via `scripts/prepare-test-db.mjs`.
+- **`\D` ne marche pas dans les regex Postgres de ce projet** (vérifié
+  empiriquement : `regexp_replace('N°29', '\D', '', 'g')` renvoie `'N°29'`
+  inchangé, échappé ou non). Utiliser la classe POSIX `[^[:digit:]]` à la
+  place. La migration 0003 porte le motif cassé mais ne l'a jamais exercé en
+  pratique (table vide au moment où elle a tourné) — ne pas copier ce motif
+  ailleurs sans le re-vérifier contre une vraie requête.
+- **`nextval()` ≠ `setval()` côté droits Postgres** : un rôle applicatif
+  avec `USAGE` sur une séquence peut créer des lignes mais pas déplacer la
+  séquence — `setval()` exige `UPDATE`, à accorder explicitement (voir
+  migration 0007). Si une future fonctionnalité a besoin d'écrire sur une
+  séquence ou tout autre objet que de simples lignes de table, vérifier les
+  droits du rôle applicatif **avant** d'écrire le code, pas après un 500 en
+  production.
+- **Rôle `facturation_app` absent des migrations** : il a été créé et doté
+  de ses droits de base directement dans Supabase, jamais capturé dans
+  l'historique de migrations. `scripts/prepare-test-db.mjs` le recrée comme
+  rôle vide sur la base de test jetable (même traitement que le rôle
+  `authenticated` pour la migration 0005), uniquement pour que les `GRANT`
+  qui le ciblent ne cassent pas la relecture des migrations en local.
 - **CI** : `tsconfig` inclut `.next/types`, généré par Next. Sur un checkout
   propre il faut `npx next typegen` avant `tsc`, sinon `LayoutProps` est
   introuvable.
@@ -203,7 +279,8 @@ Par ordre de priorité, selon la dernière discussion avec l'utilisateur :
 - `scripts/check-smtp.mjs` : diagnostic SMTP sans envoi.
 - `lib/seed-data.ts` : données de démonstration (seed désactivé par défaut).
 - `prisma/schema.prisma` + `prisma/migrations/` : schéma et historique
-  (6 migrations).
+  (7 migrations, dont la 0007 en attente d'application — voir en haut de ce
+  fichier).
 - `proxy.ts` : protection des routes, renouvellement de session.
 - `.github/workflows/ci.yml` : pipeline de vérification.
 

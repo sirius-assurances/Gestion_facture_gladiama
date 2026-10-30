@@ -5,6 +5,7 @@ import {
   getNextInvoiceStatus,
   isInvoiceIssued,
   isInvoiceOverdue,
+  validateNextInvoiceNumber,
 } from "@/lib/invoice";
 
 describe("getInvoiceDueDate", () => {
@@ -83,5 +84,32 @@ describe("isInvoiceIssued", () => {
 
   it("locks a paid invoice", () => {
     expect(isInvoiceIssued("Payée")).toBe(true);
+  });
+});
+
+describe("validateNextInvoiceNumber", () => {
+  it("accepts a number ahead of what is already in the table", () => {
+    expect(validateNextInvoiceNumber(36, 30)).toBeNull();
+  });
+
+  it("accepts any positive number when the table is empty", () => {
+    expect(validateNextInvoiceNumber(1, null)).toBeNull();
+  });
+
+  it("rejects a number that would collide with an existing invoice", () => {
+    expect(validateNextInvoiceNumber(30, 30)).toMatch(/supérieur.*N°30/);
+  });
+
+  it("rejects a number below what is already in the table", () => {
+    expect(validateNextInvoiceNumber(25, 30)).toMatch(/supérieur.*N°30/);
+  });
+
+  it("rejects zero and negative numbers", () => {
+    expect(validateNextInvoiceNumber(0, null)).toMatch(/entier positif/);
+    expect(validateNextInvoiceNumber(-5, null)).toMatch(/entier positif/);
+  });
+
+  it("rejects non-integers", () => {
+    expect(validateNextInvoiceNumber(30.5, null)).toMatch(/entier positif/);
   });
 });
