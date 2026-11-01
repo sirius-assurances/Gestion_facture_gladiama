@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, FileText, Mail, MessageCircle, Pencil, Save, X } from "lucide-react";
+import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { createInvoice, getClients, getNextInvoiceNumber, setNextInvoiceNumber } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice";
@@ -25,7 +25,6 @@ export default function InvoiceForm() {
   const [shareNotice, setShareNotice] = useState("");
   const [actionError, setActionError] = useState("");
   const [nextNumber, setNextNumber] = useState("");
-  const [editingNumber, setEditingNumber] = useState(false);
   const [numberInput, setNumberInput] = useState("");
   const [numberError, setNumberError] = useState("");
   const [numberSaving, setNumberSaving] = useState(false);
@@ -35,6 +34,7 @@ export default function InvoiceForm() {
       const [storedClients, upcomingNumber] = await Promise.all([getClients(), getNextInvoiceNumber()]);
       setClients(storedClients);
       setNextNumber(upcomingNumber);
+      setNumberInput(upcomingNumber.replace(/\D/g, ""));
       const preferredClientId = searchParams.get("client");
       const initialClient = storedClients.find((client) => client.id === preferredClientId) ?? storedClients[0];
 
@@ -61,20 +61,16 @@ export default function InvoiceForm() {
     }
   }
 
-  function startEditingNumber() {
-    // Prefills with the digits of the current prediction, so correcting it
-    // is "change this number" rather than "retype it from scratch".
-    setNumberInput(nextNumber.replace(/\D/g, ""));
-    setNumberError("");
-    setEditingNumber(true);
-  }
-
   async function confirmNumberEdit() {
     const parsed = Number(numberInput);
     if (!Number.isInteger(parsed) || parsed < 1) {
       setNumberError("Entrez un numéro entier positif.");
       return;
     }
+    // Nothing changed: the field still shows today's prediction — no point
+    // round-tripping to the server to "set" it to what it already is.
+    if (`N°${parsed}` === nextNumber) return;
+
     setNumberSaving(true);
     setNumberError("");
     try {
@@ -82,7 +78,7 @@ export default function InvoiceForm() {
       // — never an existing invoice's number, which stays fixed once saved.
       const updated = await setNextInvoiceNumber(parsed);
       setNextNumber(updated);
-      setEditingNumber(false);
+      setNumberInput(updated.replace(/\D/g, ""));
     } catch (error) {
       setNumberError(error instanceof Error ? error.message : "Impossible de modifier le numéro.");
     } finally {
@@ -276,59 +272,45 @@ export default function InvoiceForm() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs uppercase tracking-[0.15em] text-white/50">Aperçu total</p>
-            {editingNumber ? (
-              <div className="mt-1 flex items-center gap-1.5">
-                <span className="text-sm font-semibold text-white/70">N°</span>
-                <input
-                  autoFocus
-                  className="w-20 rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-sm font-bold text-white outline-none focus:border-[#e8712b]"
-                  inputMode="numeric"
-                  onChange={(event) => setNumberInput(event.target.value.replace(/\D/g, ""))}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void confirmNumberEdit();
-                    if (event.key === "Escape") setEditingNumber(false);
-                  }}
-                  value={numberInput}
-                />
-                <button
-                  aria-label="Confirmer le numéro"
-                  className="rounded-lg bg-[#e8712b] p-1.5 text-white hover:bg-[#d86322] disabled:opacity-50"
-                  disabled={numberSaving}
-                  onClick={confirmNumberEdit}
-                  type="button"
-                >
-                  <Check size={14} />
-                </button>
-                <button
-                  aria-label="Annuler"
-                  className="rounded-lg p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
-                  disabled={numberSaving}
-                  onClick={() => setEditingNumber(false)}
-                  type="button"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture {nextNumber || "…"}</p>
-                {/* Not for renumbering an existing invoice — it has none —
-                    but for aligning where numbering starts, when invoices
-                    were already issued outside the app. */}
-                <button
-                  aria-label="Modifier le prochain numéro de facture"
-                  className="rounded-lg p-1 text-white/40 hover:bg-white/10 hover:text-white"
-                  onClick={startEditingNumber}
-                  title="Modifier le prochain numéro"
-                  type="button"
-                >
-                  <Pencil size={13} />
-                </button>
-              </div>
-            )}
-            {numberError && <p className="mt-1.5 text-xs text-[#e8a0a0]">{numberError}</p>}
+            <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture {nextNumber || "…"}</p>
           </div>
         </div>
+
+        {/* A plain field, not a field you first have to click a pencil to
+            reveal: most of the time this just confirms the predicted number,
+            but it's where to type the real one when invoices were already
+            issued outside the app (paper, a previous tool) and numbering
+            here needs to pick up where those left off. Only the *next*
+            number moves — an invoice already saved keeps the one it was
+            given, which stays fixed once assigned. */}
+        <label className="mb-6 block">
+          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.1em] text-white/50">
+            Numéro de cette facture
+          </span>
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 focus-within:border-[#e8712b]">
+              <span className="text-sm font-semibold text-white/50">N°</span>
+              <input
+                className="w-full bg-transparent text-sm font-semibold text-white outline-none"
+                inputMode="numeric"
+                onChange={(event) => setNumberInput(event.target.value.replace(/\D/g, ""))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void confirmNumberEdit();
+                }}
+                value={numberInput}
+              />
+            </div>
+            <button
+              className="rounded-xl bg-white/10 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={numberSaving || !numberInput || `N°${numberInput}` === nextNumber}
+              onClick={confirmNumberEdit}
+              type="button"
+            >
+              {numberSaving ? "…" : "Valider"}
+            </button>
+          </div>
+          {numberError && <p className="mt-1.5 text-xs text-[#e8a0a0]">{numberError}</p>}
+        </label>
 
         <div className="space-y-4 border-b border-white/10 pb-6 text-sm">
           <div className="flex justify-between text-white/65">

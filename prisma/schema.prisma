@@ -82,3 +82,21 @@ enum InvoiceStatus {
 
   @@schema("facturation")
 }
+
+/// A mailbox connected through "Se connecter avec Microsoft" rather than an
+/// app password: the owner authenticates directly with Microsoft, never
+/// handing a password to this app, and only a refresh token — encrypted at
+/// rest, see lib/oauth/crypto.ts — is kept here to send on their behalf.
+model OAuthAccount {
+  id               String   @id @default(uuid())
+  provider         String   @default("microsoft")
+  email            String
+  displayName      String?
+  encryptedRefreshToken String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  connectedByEmail String?
+
+  @@schema("facturation")
+  @@unique([provider, email])
+}

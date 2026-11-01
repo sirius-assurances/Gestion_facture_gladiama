@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatFrenchDate } from "@/lib/format";
 import { createTransport, formatSender, readMailerAccounts } from "@/lib/email/mailer";
+import { COMPANY } from "@/lib/company";
+import { decryptToken, encryptToken } from "@/lib/oauth/crypto";
+import { readMicrosoftOAuthConfig, refreshAccessToken, sendMailViaGraph } from "@/lib/oauth/microsoft";
 import {
   buildAttachmentName,
   buildInvoiceHtml,
@@ -561,25 +564,44 @@ function invoiceMessageInput(invoice: InvoiceWithRelations): InvoiceMessageInput
  * server because only it knows the configured mailbox, and the dialog has
  * to show what will actually appear in the client's inbox.
  */
+/** Namespaced so an id can never collide between the two kinds of account, and sendInvoiceEmail can branch on the prefix alone. */
+function oauthAccountId(id: string) {
+  return `oauth:${id}`;
+}
+
 export async function getInvoiceEmailDraft(invoiceId: string): Promise<InvoiceEmailDraft> {
   await requireUser();
   const id = z.string().min(1).parse(invoiceId);
   const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, items: true } });
   if (!invoice) throw new Error("Facture introuvable.");
 
-  const mailer = readMailerAccounts();
+  const [mailer, oauthAccounts] = await Promise.all([
+    Promise.resolve(readMailerAccounts()),
+    prisma.oAuthAccount.findMany({ orderBy: { createdAt: "asc" } }),
+  ]);
   const message = invoiceMessageInput(invoice);
 
+  const accounts = [
+    ...mailer.accounts.map((account) => ({ id: account.id, label: formatSender(account.config) })),
+    // Connected via "Se connecter avec Microsoft" (see app/api/auth/microsoft):
+    // no app password anywhere, the owner authenticated directly with
+    // Microsoft and this app only holds an encrypted refresh token.
+    ...oauthAccounts.map((account) => ({
+      id: oauthAccountId(account.id),
+      label: `${account.displayName ?? COMPANY.name} <${account.email}>`,
+    })),
+  ];
+
   return {
-    accounts: mailer.accounts.map((account) => ({ id: account.id, label: formatSender(account.config) })),
+    accounts,
     to: invoice.client.email ?? "",
     cc: invoice.client.ccEmails.join(", "),
     subject: buildInvoiceSubject(message),
     body: buildInvoiceLetter(message),
     summary: buildInvoiceSummary(message),
     attachmentName: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
-    configured: mailer.accounts.length > 0,
-    missing: mailer.accounts.length > 0 ? [] : mailer.missing,
+    configured: accounts.length > 0,
+    missing: accounts.length > 0 ? [] : mailer.missing,
   };
 }
 
@@ -593,19 +615,60 @@ export async function getInvoiceEmailDraft(invoiceId: string): Promise<InvoiceEm
  * for an issued invoice, so the order here is what guarantees the archived
  * document is exactly the one that went out.
  */
+/**
+ * Sends through a connected Microsoft mailbox via Microsoft Graph rather
+ * than SMTP — more reliable for a personal outlook.com/hotmail.com account,
+ * which does not always have "Authenticated SMTP" enabled the way a managed
+ * work mailbox would. The refresh token is used once to obtain a fresh
+ * access token (Graph tokens last roughly an hour) and, since Microsoft can
+ * rotate the refresh token on any renewal, the stored one is updated so the
+ * next send does not silently start failing.
+ */
+async function sendViaOAuthAccount(
+  oauthId: string,
+  data: z.infer<typeof emailDraftSchema>,
+  invoice: InvoiceWithRelations,
+  message: InvoiceMessageInput,
+  pdf: Buffer,
+) {
+  const account = await prisma.oAuthAccount.findUnique({ where: { id: oauthId } });
+  if (!account) throw new Error("Ce compte Microsoft n'est plus connecté. Reconnectez-le.");
+
+  const config = readMicrosoftOAuthConfig();
+  if (!config.ok) throw new Error("Connexion Microsoft non configurée côté serveur.");
+
+  let accessToken: string;
+  try {
+    const storedRefreshToken = decryptToken(account.encryptedRefreshToken);
+    const refreshed = await refreshAccessToken(config.config, storedRefreshToken);
+    accessToken = refreshed.accessToken;
+    if (refreshed.refreshToken !== storedRefreshToken) {
+      await prisma.oAuthAccount.update({
+        where: { id: account.id },
+        data: { encryptedRefreshToken: encryptToken(refreshed.refreshToken) },
+      });
+    }
+  } catch (error) {
+    throw new Error(
+      `Le compte Microsoft ${account.email} a refusé le renouvellement de connexion : ` +
+        `${error instanceof Error ? error.message : "erreur inconnue"}. Reconnectez-le.`,
+    );
+  }
+
+  await sendMailViaGraph(accessToken, {
+    to: data.to,
+    cc: data.cc?.length ? data.cc : undefined,
+    replyTo: data.replyTo,
+    subject: data.subject,
+    text: buildInvoiceText(data.body, message),
+    html: buildInvoiceHtml(data.body, message),
+    attachment: { filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name), contentBase64: pdf.toString("base64") },
+  });
+}
+
 export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) {
   const user = await requireUser();
   const data = emailDraftSchema.parse(input);
-
-  const mailer = readMailerAccounts();
-  if (mailer.accounts.length === 0) {
-    throw new Error(`Envoi non configuré. Variables manquantes : ${mailer.missing.join(", ")}.`);
-  }
-  // Looked up by id rather than trusting a config object from the client:
-  // the only way to send from a given address is for it to already be one
-  // of the server's own configured accounts.
-  const account = mailer.accounts.find((entry) => entry.id === data.accountId);
-  if (!account) throw new Error("Adresse d'expédition invalide ou plus disponible.");
 
   const invoice = await prisma.invoice.findUnique({
     where: { id: data.invoiceId },
@@ -615,36 +678,47 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
 
   const pdf = await renderInvoicePdf(invoice);
   await storeInvoicePdf(invoice, pdf);
-
   const message = invoiceMessageInput(invoice);
-  const transport = createTransport(account.config);
-  try {
-    await transport.sendMail({
-      from: formatSender(account.config),
-      to: data.to,
-      cc: data.cc?.length ? data.cc : undefined,
-      replyTo: data.replyTo || account.config.replyTo,
-      // SMTP only sends; it files nothing in the sender's mailbox. Without
-      // this the sender keeps no record of what left.
-      bcc: account.config.fromEmail,
-      subject: data.subject,
-      // Both parts: the HTML is what most clients show, the text is the
-      // fallback for those that refuse it — and for spam filters, which
-      // treat an HTML-only message as a smell.
-      text: buildInvoiceText(data.body, message),
-      html: buildInvoiceHtml(data.body, message),
-      attachments: [
-        {
-          filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
-          content: pdf,
-          contentType: "application/pdf",
-        },
-      ],
-    });
-  } catch (error) {
-    // Surfaced verbatim: "535 authentication failed" tells the user to fix
-    // the app password, where "envoi impossible" would not.
-    throw new Error(`Envoi refusé par le serveur de messagerie : ${error instanceof Error ? error.message : "erreur inconnue"}`);
+
+  if (data.accountId.startsWith("oauth:")) {
+    await sendViaOAuthAccount(data.accountId.slice("oauth:".length), data, invoice, message, pdf);
+  } else {
+    const mailer = readMailerAccounts();
+    // Looked up by id rather than trusting a config object from the client:
+    // the only way to send from a given address is for it to already be one
+    // of the server's own configured accounts.
+    const account = mailer.accounts.find((entry) => entry.id === data.accountId);
+    if (!account) throw new Error("Adresse d'expédition invalide ou plus disponible.");
+
+    const transport = createTransport(account.config);
+    try {
+      await transport.sendMail({
+        from: formatSender(account.config),
+        to: data.to,
+        cc: data.cc?.length ? data.cc : undefined,
+        replyTo: data.replyTo || account.config.replyTo,
+        // SMTP only sends; it files nothing in the sender's mailbox. Without
+        // this the sender keeps no record of what left.
+        bcc: account.config.fromEmail,
+        subject: data.subject,
+        // Both parts: the HTML is what most clients show, the text is the
+        // fallback for those that refuse it — and for spam filters, which
+        // treat an HTML-only message as a smell.
+        text: buildInvoiceText(data.body, message),
+        html: buildInvoiceHtml(data.body, message),
+        attachments: [
+          {
+            filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
+            content: pdf,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+    } catch (error) {
+      // Surfaced verbatim: "535 authentication failed" tells the user to fix
+      // the app password, where "envoi impossible" would not.
+      throw new Error(`Envoi refusé par le serveur de messagerie : ${error instanceof Error ? error.message : "erreur inconnue"}`);
+    }
   }
 
   if (data.markAsSent && !isInvoiceIssued(statusFromDb[invoice.status])) {

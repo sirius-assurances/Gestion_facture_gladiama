@@ -144,8 +144,20 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
               <span className="mt-1.5 block text-xs text-[#6f7885]">
                 {draft.accounts.length > 1
                   ? "Choisissez parmi les adresses configurées."
-                  : "Défini par la configuration d’envoi, pas modifiable ici."}
+                  : draft.accounts.length === 1
+                    ? "Défini par la configuration d’envoi, pas modifiable ici."
+                    : "Aucune adresse configurée."}
               </span>
+              {/* Full-page redirect rather than a popup: Microsoft's own
+                  login page, the account owner types their password only
+                  there, and this app never sees or stores one — only the
+                  resulting connection (app/api/auth/microsoft). */}
+              <a
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#e8712b] hover:underline"
+                href={`/api/auth/microsoft/connect?returnTo=${encodeURIComponent(`/invoices/${invoiceId}`)}`}
+              >
+                + Connecter un compte Microsoft
+              </a>
             </label>
 
             <label className="block">

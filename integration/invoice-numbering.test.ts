@@ -188,3 +188,36 @@ describe("invoice relations", () => {
     expect(Number(invoice.items[0].quantity)).toBe(2360.125);
   });
 });
+
+describe("connected Microsoft accounts", () => {
+  it("stores and reads back a connected account", async () => {
+    const account = await prisma.oAuthAccount.create({
+      data: {
+        provider: "microsoft",
+        email: "boss@hotmail.com",
+        displayName: "Le Directeur",
+        // A placeholder, not a real token: this only proves the column
+        // round-trips, encryption is covered separately (lib/oauth/crypto.test.ts).
+        encryptedRefreshToken: "iv:tag:ciphertext",
+        connectedByEmail: "admin@exemple.com",
+      },
+    });
+
+    const found = await prisma.oAuthAccount.findUnique({ where: { id: account.id } });
+    expect(found?.email).toBe("boss@hotmail.com");
+  });
+
+  // Reconnecting the same Microsoft account must replace its stored token
+  // rather than leaving two rows racing for which one sendInvoiceEmail uses.
+  it("rejects a second row for the same provider and email", async () => {
+    await prisma.oAuthAccount.create({
+      data: { provider: "microsoft", email: "boss@hotmail.com", encryptedRefreshToken: "a" },
+    });
+
+    await expect(
+      prisma.oAuthAccount.create({
+        data: { provider: "microsoft", email: "boss@hotmail.com", encryptedRefreshToken: "b" },
+      }),
+    ).rejects.toThrow();
+  });
+});

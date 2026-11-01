@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft, Download, Eye, FileText, Mail, MessageCircle, Save } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   generateAndStoreInvoicePdf,
@@ -31,6 +31,7 @@ import EmailDialog from "@/components/invoices/email-dialog";
 export default function InvoiceDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [invoice, setInvoice] = useState<InvoiceRecord | null>(null);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [pdfPending, setPdfPending] = useState(false);
@@ -46,6 +47,28 @@ export default function InvoiceDetailsPage() {
     }
     void loadInvoice();
   }, [params.id]);
+
+  // Lands here after /api/auth/microsoft/connect redirects back from
+  // Microsoft's own login page: reopen the dialog the sender was on so the
+  // newly connected account is right there, instead of leaving them to find
+  // the Email button again after a full page round trip.
+  useEffect(() => {
+    async function handleMicrosoftRedirect() {
+      const connected = searchParams.get("microsoft_connected");
+      const microsoftError = searchParams.get("microsoft_error");
+      if (!connected && !microsoftError) return;
+
+      setEmailOpen(true);
+      setActionError(microsoftError ? `Connexion Microsoft : ${microsoftError}` : "");
+      if (connected) {
+        setShareNotice(`Compte Microsoft connecté : ${connected}`);
+        window.setTimeout(() => setShareNotice(""), 6000);
+      }
+      router.replace(`/invoices/${params.id}`);
+    }
+    void handleMicrosoftRedirect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totals = useMemo(
     () =>

@@ -19,6 +19,7 @@ export async function resetDatabase(prisma: PrismaClient) {
   await prisma.invoiceItem.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.client.deleteMany();
+  await prisma.oAuthAccount.deleteMany();
   await prisma.$executeRawUnsafe("ALTER SEQUENCE facturation.invoice_number_seq RESTART WITH 1");
 }
 
