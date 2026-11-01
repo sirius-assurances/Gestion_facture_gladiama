@@ -179,6 +179,40 @@ export default function InvoiceForm() {
         </div>
 
         <div className="space-y-5">
+          {/* Most of the time this just confirms the predicted number, but
+              it's where to type the real one when invoices were already
+              issued outside the app (paper, a previous tool) and numbering
+              here needs to pick up where those left off. Only the *next*
+              number moves — an invoice already saved keeps the one it was
+              given, which stays fixed once assigned (lib/invoice.ts,
+              isInvoiceIssued). */}
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold">Numéro de facture</span>
+            <div className="flex items-center gap-2">
+              <span className="relative flex flex-1 items-center gap-1.5 rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 focus-within:border-[#e8712b]">
+                <span className="text-sm font-semibold text-[#9ba1a7]">N°</span>
+                <input
+                  className="w-full bg-transparent text-sm outline-none"
+                  inputMode="numeric"
+                  onChange={(event) => setNumberInput(event.target.value.replace(/\D/g, ""))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void confirmNumberEdit();
+                  }}
+                  value={numberInput}
+                />
+              </span>
+              <button
+                className="shrink-0 rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm font-semibold text-[#172238] hover:border-[#e8712b] disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={numberSaving || !numberInput || `N°${numberInput}` === nextNumber}
+                onClick={confirmNumberEdit}
+                type="button"
+              >
+                {numberSaving ? "…" : "Valider"}
+              </button>
+            </div>
+            {numberError && <p className="mt-2 text-xs text-[#c13a3a]">{numberError}</p>}
+          </label>
+
           <label className="block">
             <span className="mb-2 block text-sm font-semibold">Client</span>
             <span className="relative block">
@@ -275,42 +309,6 @@ export default function InvoiceForm() {
             <p className="font-[var(--font-space-grotesk)] text-lg font-bold">Facture {nextNumber || "…"}</p>
           </div>
         </div>
-
-        {/* A plain field, not a field you first have to click a pencil to
-            reveal: most of the time this just confirms the predicted number,
-            but it's where to type the real one when invoices were already
-            issued outside the app (paper, a previous tool) and numbering
-            here needs to pick up where those left off. Only the *next*
-            number moves — an invoice already saved keeps the one it was
-            given, which stays fixed once assigned. */}
-        <label className="mb-6 block">
-          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.1em] text-white/50">
-            Numéro de cette facture
-          </span>
-          <div className="flex items-center gap-2">
-            <div className="flex flex-1 items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 focus-within:border-[#e8712b]">
-              <span className="text-sm font-semibold text-white/50">N°</span>
-              <input
-                className="w-full bg-transparent text-sm font-semibold text-white outline-none"
-                inputMode="numeric"
-                onChange={(event) => setNumberInput(event.target.value.replace(/\D/g, ""))}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void confirmNumberEdit();
-                }}
-                value={numberInput}
-              />
-            </div>
-            <button
-              className="rounded-xl bg-white/10 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={numberSaving || !numberInput || `N°${numberInput}` === nextNumber}
-              onClick={confirmNumberEdit}
-              type="button"
-            >
-              {numberSaving ? "…" : "Valider"}
-            </button>
-          </div>
-          {numberError && <p className="mt-1.5 text-xs text-[#e8a0a0]">{numberError}</p>}
-        </label>
 
         <div className="space-y-4 border-b border-white/10 pb-6 text-sm">
           <div className="flex justify-between text-white/65">
