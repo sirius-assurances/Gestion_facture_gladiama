@@ -133,6 +133,7 @@ describe("billing Server Actions without an authenticated session", () => {
     await expect(
       sendInvoiceEmail({
         invoiceId: "inv-1",
+        accountId: "default",
         to: "client@exemple.com",
         subject: "Facture",
         body: "Bonjour",

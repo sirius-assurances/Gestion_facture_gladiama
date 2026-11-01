@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatFrenchDate } from "@/lib/format";
-import { createTransport, formatSender, readMailerConfig } from "@/lib/email/mailer";
+import { createTransport, formatSender, readMailerAccounts } from "@/lib/email/mailer";
 import {
   buildAttachmentName,
   buildInvoiceHtml,
@@ -499,6 +499,10 @@ export async function getInvoicePdfUrl(invoiceId: string) {
 
 const emailDraftSchema = z.object({
   invoiceId: z.string().min(1),
+  // Not free text: must match one of the accounts readMailerAccounts()
+  // returns, checked at send time. A caller can't make the server send from
+  // an address it was never configured to authenticate as.
+  accountId: z.string().min(1),
   to: z.string().trim().email("Adresse du destinataire invalide.").max(200),
   cc: z.array(z.string().trim().email().max(200)).max(20).optional(),
   replyTo: z.string().trim().email().max(200).optional(),
@@ -510,7 +514,8 @@ const emailDraftSchema = z.object({
 });
 
 export type InvoiceEmailDraft = {
-  from: string;
+  /** Every address the dialog may send from, for the "De" dropdown — never free text (see emailDraftSchema). */
+  accounts: Array<{ id: string; label: string }>;
   to: string;
   /** From the client record; the sender can still change it for one message. */
   cc: string;
@@ -562,19 +567,19 @@ export async function getInvoiceEmailDraft(invoiceId: string): Promise<InvoiceEm
   const invoice = await prisma.invoice.findUnique({ where: { id }, include: { client: true, items: true } });
   if (!invoice) throw new Error("Facture introuvable.");
 
-  const mailer = readMailerConfig();
+  const mailer = readMailerAccounts();
   const message = invoiceMessageInput(invoice);
 
   return {
-    from: mailer.ok ? formatSender(mailer.config) : "",
+    accounts: mailer.accounts.map((account) => ({ id: account.id, label: formatSender(account.config) })),
     to: invoice.client.email ?? "",
     cc: invoice.client.ccEmails.join(", "),
     subject: buildInvoiceSubject(message),
     body: buildInvoiceLetter(message),
     summary: buildInvoiceSummary(message),
     attachmentName: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
-    configured: mailer.ok,
-    missing: mailer.ok ? [] : mailer.missing,
+    configured: mailer.accounts.length > 0,
+    missing: mailer.accounts.length > 0 ? [] : mailer.missing,
   };
 }
 
@@ -592,10 +597,15 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
   const user = await requireUser();
   const data = emailDraftSchema.parse(input);
 
-  const mailer = readMailerConfig();
-  if (!mailer.ok) {
+  const mailer = readMailerAccounts();
+  if (mailer.accounts.length === 0) {
     throw new Error(`Envoi non configuré. Variables manquantes : ${mailer.missing.join(", ")}.`);
   }
+  // Looked up by id rather than trusting a config object from the client:
+  // the only way to send from a given address is for it to already be one
+  // of the server's own configured accounts.
+  const account = mailer.accounts.find((entry) => entry.id === data.accountId);
+  if (!account) throw new Error("Adresse d'expédition invalide ou plus disponible.");
 
   const invoice = await prisma.invoice.findUnique({
     where: { id: data.invoiceId },
@@ -607,16 +617,16 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
   await storeInvoicePdf(invoice, pdf);
 
   const message = invoiceMessageInput(invoice);
-  const transport = createTransport(mailer.config);
+  const transport = createTransport(account.config);
   try {
     await transport.sendMail({
-      from: formatSender(mailer.config),
+      from: formatSender(account.config),
       to: data.to,
       cc: data.cc?.length ? data.cc : undefined,
-      replyTo: data.replyTo || mailer.config.replyTo,
+      replyTo: data.replyTo || account.config.replyTo,
       // SMTP only sends; it files nothing in the sender's mailbox. Without
       // this the sender keeps no record of what left.
-      bcc: mailer.config.fromEmail,
+      bcc: account.config.fromEmail,
       subject: data.subject,
       // Both parts: the HTML is what most clients show, the text is the
       // fallback for those that refuse it — and for spam filters, which

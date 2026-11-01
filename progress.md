@@ -1,6 +1,6 @@
 # Progression du projet
 
-Dernière mise à jour : 2026-10-30
+Dernière mise à jour : 2026-11-01
 
 ## Objectif
 
@@ -11,34 +11,34 @@ génération des PDF et **envoi par email**, sur PostgreSQL Supabase (schéma
 ## État actuel
 
 L'application est **en production et fonctionnelle**, envoi d'emails compris.
-Base Supabase à jour (6 migrations appliquées ; une 7ᵉ écrite et en attente
-d'application manuelle, voir *Action requise* ci-dessous). Authentification
-Supabase par cookies, deux comptes utilisateurs aux droits identiques.
+Base Supabase à jour (7 migrations appliquées, y compris la 0007 qui accorde
+`UPDATE` sur `invoice_number_seq` — confirmé par un test en production le
+2026-10-31). Authentification Supabase par cookies, deux comptes
+utilisateurs aux droits identiques.
 
-Qualité : 94 tests unitaires, 13 tests d'intégration (vraie base), 11 tests
+Qualité : 100 tests unitaires, 13 tests d'intégration (vraie base), 11 tests
 E2E actifs + 1 ignoré par défaut (vrai navigateur), et un CI GitHub Actions
 qui exécute tout sauf les E2E à chaque push (voir *Reste à faire*).
 
-## ⚠️ Action requise : migration 0007 pas encore appliquée en production
+## ⚠️ Action requise : mot de passe d'application du patron
 
-`prisma/migrations/0007_grant_sequence_update/migration.sql` accorde au rôle
-applicatif `facturation_app` le privilège `UPDATE` sur
-`invoice_number_seq`, nécessaire pour la nouvelle fonctionnalité de
-correction du prochain numéro de facture (voir section suivante). Le rôle a
-`USAGE` (suffisant pour `nextval()`, donc la création de facture marche déjà)
-mais pas `UPDATE` (nécessaire pour `setval()`). **Pas de connecteur Supabase
-disponible sur ce projet** (`skhuhhmyhkjqnlgixnga`, compte différent de celui
-accessible par l'outil MCP) : l'utilisateur doit coller et exécuter cette
-ligne dans l'éditeur SQL Supabase, comme pour la migration 0006 :
+Le menu « De » de l'écran d'envoi sait désormais proposer plusieurs adresses
+d'expédition (voir *Fonctionnalité d'envoi par email*), mais **en
+production il n'y en a toujours qu'une** (`dialloimamsaid@gmail.com`) : le
+second compte (`abdoulayedrame1@hotmail.com`) n'est pas câblé faute du mot
+de passe d'application Outlook du patron. Pour l'ajouter, dans Vercel →
+Environment Variables :
 
-```sql
-GRANT UPDATE ON SEQUENCE "facturation"."invoice_number_seq" TO facturation_app;
+```
+SMTP_ACCOUNTS=boss
+SMTP_BOSS_SERVICE=outlook
+SMTP_BOSS_USER=abdoulayedrame1@hotmail.com
+SMTP_BOSS_PASSWORD=[mot de passe d'application Outlook du patron]
+SMTP_BOSS_FROM_NAME=GLADIAMA SUARL
 ```
 
-Tant que ce n'est pas fait, cliquer sur le crayon pour modifier le prochain
-numéro de facture échoue avec `permission denied for sequence
-invoice_number_seq` (erreur 500 complète en journal serveur). Le reste de
-l'app n'est pas affecté.
+Vérifiable sans rien envoyer avec `npm run check:smtp -- boss` une fois les
+identifiants en main.
 
 ## Démarrer
 
@@ -83,17 +83,37 @@ PDF réellement attaché.
 - Champ **Cc par client** (migration 0006, `Client.ccEmails`, tableau
   Postgres) : préremplit le Cc à l'ouverture de la fenêtre, modifiable au cas
   par cas.
+- **Plusieurs comptes d'envoi** (novembre 2026) — `readMailerAccounts` dans
+  `lib/email/mailer.ts` : le compte historique (variables `SMTP_*` sans
+  préfixe) reste l'id `default` ; `SMTP_ACCOUNTS="boss"` ajoute un second
+  compte lu sous `SMTP_BOSS_*`, même convention de variables que le premier.
+  Le champ « De » de l'écran d'envoi reste un `<input>` en lecture seule tant
+  qu'un seul compte est configuré, et devient un `<select>` dès qu'il y en a
+  plusieurs — **jamais de texte libre** : une adresse d'expédition n'est
+  utilisable que si le serveur a vraiment ses identifiants (sinon rejet ou
+  spam, SPF/DKIM). `sendInvoiceEmail` résout l'`accountId` reçu contre les
+  comptes réellement configurés côté serveur ; un id inconnu est refusé.
+  `npm run check:smtp -- boss` teste un compte précis sans rien envoyer.
 
 **Vérifié en production** (pas seulement en local) : envoi réel accepté,
 PDF de 458 Ko reçu avec ses mentions légales, champ Cc prérempli depuis la
-fiche client, statut inchangé quand la case n'est pas cochée.
+fiche client, statut inchangé quand la case n'est pas cochée. Le
+multi-compte est vérifié en local avec un second compte factice : le menu
+affiche bien les deux adresses réelles, et un envoi avec le second compte
+sélectionné échoue avec une erreur d'authentification **venant du serveur
+Outlook** — preuve que les identifiants du bon compte sont bien ceux
+utilisés, pas un repli silencieux sur le compte par défaut.
 
 **Configuré en production** : `SMTP_SERVICE=gmail`, boîte personnelle de
-l'utilisateur (voir `.env.example` pour la liste des variables). Le nom de
-domaine `gladiamadigital.com` existe et sa zone DNS est active chez
-Cloudflare, mais **sans enregistrement MX** : rien ne peut y être reçu. Tant
-qu'on ne bascule pas sur Resend + ce domaine, l'expéditeur reste une adresse
-Gmail/Outlook personnelle, avec éventuellement un `Reply-To` différent.
+l'utilisateur (voir `.env.example` pour la liste des variables). Le compte
+du patron (`abdoulayedrame1@hotmail.com`) n'est **pas encore ajouté** —
+il faut son mot de passe d'application Outlook dans `SMTP_BOSS_PASSWORD`
+pour que l'option apparaisse réellement dans le menu déroulant en
+production. Le nom de domaine `gladiamadigital.com` existe et sa zone DNS
+est active chez Cloudflare, mais **sans enregistrement MX** : rien ne peut
+y être reçu. Tant qu'on ne bascule pas sur Resend + ce domaine, l'expéditeur
+reste une adresse Gmail/Outlook personnelle, avec éventuellement un
+`Reply-To` différent.
 
 ## Génération des PDF côté serveur (octobre 2026)
 
@@ -130,7 +150,7 @@ Repasser en « Brouillon » est le seul moyen de corriger, et ça archive
 d'abord le PDF émis sous un nom horodaté (best-effort : un échec d'archivage
 ne doit jamais bloquer la correction).
 
-## Corriger le prochain numéro de facture (octobre 2026, migration en attente)
+## Corriger le prochain numéro de facture (octobre 2026)
 
 Besoin réel : des factures ont été émises **hors de l'app** (papier, autre
 outil) jusqu'à un certain numéro, et la numérotation ici doit reprendre à la
@@ -162,8 +182,9 @@ compteur qui se déplace, une fois, puis la numérotation continue seule.
      `facturation_app` n'avait que `USAGE` (suffisant pour `nextval()`,
      jamais mis à l'épreuve avant) mais pas `UPDATE` (nécessaire pour
      `setval()`) — deux privilèges Postgres distincts sur une séquence.
-     D'où la migration 0007, **pas encore appliquée** (voir section
-     *Action requise* en haut de ce fichier).
+     D'où la migration 0007, **appliquée et vérifiée en production le
+     2026-10-31** (rejet, correction réelle à N°51, puis restauration à
+     N°31 — testé de bout en bout, aucune trace laissée).
 
 ## Pièges connus (chèrement acquis)
 
@@ -279,8 +300,7 @@ Par ordre de priorité, selon la dernière discussion avec l'utilisateur :
 - `scripts/check-smtp.mjs` : diagnostic SMTP sans envoi.
 - `lib/seed-data.ts` : données de démonstration (seed désactivé par défaut).
 - `prisma/schema.prisma` + `prisma/migrations/` : schéma et historique
-  (7 migrations, dont la 0007 en attente d'application — voir en haut de ce
-  fichier).
+  (7 migrations, toutes appliquées en production).
 - `proxy.ts` : protection des routes, renouvellement de session.
 - `.github/workflows/ci.yml` : pipeline de vérification.
 

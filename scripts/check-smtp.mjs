@@ -1,10 +1,14 @@
-// Checks the SMTP settings in .env by opening a real connection and
-// authenticating — without sending anything.
+// Checks one SMTP account's settings in .env by opening a real connection
+// and authenticating — without sending anything.
 //
 // Worth its own script because the failure that matters here is silent until
 // you try: mailbox providers are withdrawing password authentication, so a
 // correctly typed app password can still be refused by the account. This
 // says so in seconds, and quotes the server's own words.
+//
+// With no argument, checks the default account (unprefixed SMTP_* vars).
+// With an id, e.g. `npm run check:smtp -- boss`, checks SMTP_BOSS_* instead —
+// the same convention lib/email/mailer.ts reads for SMTP_ACCOUNTS entries.
 import nodemailer from "nodemailer";
 
 const PRESETS = {
@@ -14,26 +18,31 @@ const PRESETS = {
   resend: { host: "smtp.resend.com", port: 465 },
 };
 
-const service = process.env.SMTP_SERVICE?.trim().toLowerCase();
+const accountId = process.argv[2]?.trim();
+const prefix = accountId ? `${accountId.toUpperCase()}_` : "";
+const at = (name) => process.env[`SMTP_${prefix}${name}`];
+
+const service = at("SERVICE")?.trim().toLowerCase();
 const preset = service ? PRESETS[service] : undefined;
-const host = process.env.SMTP_HOST?.trim() || preset?.host;
-const port = Number(process.env.SMTP_PORT?.trim() || preset?.port || 587);
-const user = process.env.SMTP_USER?.trim();
-const pass = process.env.SMTP_PASSWORD;
+const host = at("HOST")?.trim() || preset?.host;
+const port = Number(at("PORT")?.trim() || preset?.port || 587);
+const user = at("USER")?.trim();
+const pass = at("PASSWORD");
 
 const missing = [
-  !host && "SMTP_HOST (ou SMTP_SERVICE)",
-  !user && "SMTP_USER",
-  !pass && "SMTP_PASSWORD",
+  !host && `SMTP_${prefix}HOST (ou SMTP_${prefix}SERVICE)`,
+  !user && `SMTP_${prefix}USER`,
+  !pass && `SMTP_${prefix}PASSWORD`,
 ].filter(Boolean);
 
 if (missing.length) {
-  console.error(`Configuration incomplète. Manquant : ${missing.join(", ")}`);
+  console.error(`Configuration incomplète${accountId ? ` pour le compte "${accountId}"` : ""}. Manquant : ${missing.join(", ")}`);
   process.exit(1);
 }
 
+console.log(`Compte    : ${accountId ?? "par défaut"}`);
 console.log(`Serveur   : ${host}:${port} (${port === 465 ? "TLS direct" : "STARTTLS"})`);
-console.log(`Compte    : ${user}`);
+console.log(`Identifiant : ${user}`);
 console.log("Connexion…\n");
 
 const transport = nodemailer.createTransport({

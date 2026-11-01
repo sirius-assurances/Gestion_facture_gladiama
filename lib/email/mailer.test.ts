@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSender, readMailerConfig } from "@/lib/email/mailer";
+import { formatSender, readMailerAccounts, readMailerConfig } from "@/lib/email/mailer";
 
 // Sending is meant to move between mailboxes — a personal Gmail while
 // testing, the director's Outlook later, a provider on the company domain
@@ -68,5 +68,79 @@ describe("formatSender", () => {
     const result = readMailerConfig({ ...base, SMTP_SERVICE: "gmail", SMTP_FROM_NAME: "GLADIAMA SUARL" });
 
     expect(result.ok && formatSender(result.config)).toBe("GLADIAMA SUARL <moi@gmail.com>");
+  });
+});
+
+// Multiple real mailboxes selectable in the compose dialog's "De" dropdown —
+// the user's own account while testing, the director's Outlook once his app
+// password is set up — without the sender ever becoming free text (see
+// mailer.ts's module comment for why that matters: SPF/DKIM).
+describe("readMailerAccounts", () => {
+  it("returns just the default account when nothing extra is declared", () => {
+    const result = readMailerAccounts({ ...base, SMTP_SERVICE: "gmail" });
+
+    expect(result.accounts.map((a) => a.id)).toEqual(["default"]);
+  });
+
+  it("adds an account named in SMTP_ACCOUNTS, reading its own prefixed variables", () => {
+    const result = readMailerAccounts({
+      ...base,
+      SMTP_SERVICE: "gmail",
+      SMTP_ACCOUNTS: "boss",
+      SMTP_BOSS_SERVICE: "outlook",
+      SMTP_BOSS_USER: "patron@hotmail.com",
+      SMTP_BOSS_PASSWORD: "secret2",
+    });
+
+    expect(result.accounts.map((a) => a.id)).toEqual(["default", "boss"]);
+    expect(result.accounts[1].config.host).toBe("smtp-mail.outlook.com");
+    expect(result.accounts[1].config.user).toBe("patron@hotmail.com");
+  });
+
+  it("skips an account named in SMTP_ACCOUNTS whose variables are incomplete", () => {
+    const result = readMailerAccounts({
+      ...base,
+      SMTP_SERVICE: "gmail",
+      SMTP_ACCOUNTS: "boss",
+      SMTP_BOSS_USER: "patron@hotmail.com",
+      // SMTP_BOSS_PASSWORD missing — the whole second account drops rather
+      // than appearing as a dropdown entry that fails only at send time.
+    });
+
+    expect(result.accounts.map((a) => a.id)).toEqual(["default"]);
+  });
+
+  it("supports several extra accounts", () => {
+    const result = readMailerAccounts({
+      ...base,
+      SMTP_SERVICE: "gmail",
+      SMTP_ACCOUNTS: "boss, archive",
+      SMTP_BOSS_SERVICE: "outlook",
+      SMTP_BOSS_USER: "patron@hotmail.com",
+      SMTP_BOSS_PASSWORD: "secret2",
+      SMTP_ARCHIVE_SERVICE: "gmail",
+      SMTP_ARCHIVE_USER: "archives@gmail.com",
+      SMTP_ARCHIVE_PASSWORD: "secret3",
+    });
+
+    expect(result.accounts.map((a) => a.id)).toEqual(["default", "boss", "archive"]);
+  });
+
+  it("returns no accounts and the default's missing variables when nothing is configured", () => {
+    const result = readMailerAccounts({});
+
+    expect(result.accounts).toEqual([]);
+    expect(result.missing).toEqual(["SMTP_HOST (ou SMTP_SERVICE)", "SMTP_USER", "SMTP_PASSWORD"]);
+  });
+
+  it("can offer only a secondary account when the default is not configured", () => {
+    const result = readMailerAccounts({
+      SMTP_ACCOUNTS: "boss",
+      SMTP_BOSS_SERVICE: "outlook",
+      SMTP_BOSS_USER: "patron@hotmail.com",
+      SMTP_BOSS_PASSWORD: "secret2",
+    });
+
+    expect(result.accounts.map((a) => a.id)).toEqual(["boss"]);
   });
 });

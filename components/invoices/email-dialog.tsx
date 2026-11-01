@@ -25,6 +25,7 @@ const fieldClass =
  */
 export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose, onSent }: Props) {
   const [draft, setDraft] = useState<InvoiceEmailDraft | null>(null);
+  const [accountId, setAccountId] = useState("");
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [replyTo, setReplyTo] = useState("");
@@ -40,6 +41,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
       .then((result) => {
         if (!active) return;
         setDraft(result);
+        setAccountId(result.accounts[0]?.id ?? "");
         setTo(result.to);
         setCc(result.cc);
         setSubject(result.subject);
@@ -67,6 +69,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
     try {
       await sendInvoiceEmail({
         invoiceId,
+        accountId,
         to: to.trim(),
         cc: parseRecipients(cc),
         replyTo: replyTo.trim() || undefined,
@@ -82,7 +85,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
   };
 
   const ccList = parseRecipients(cc);
-  const ready = Boolean(draft?.configured) && to.trim().length > 0 && subject.trim().length > 0;
+  const ready = Boolean(draft?.configured) && accountId.length > 0 && to.trim().length > 0 && subject.trim().length > 0;
 
   return (
     <div
@@ -120,12 +123,28 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
           <div className="grid gap-4">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold">De</span>
-              {/* Read-only: a message may only claim an address its mail server
-                  is authorised to send for. A free-text sender would be
-                  rejected outright or filed as spam. */}
-              <input className={fieldClass} disabled readOnly value={draft.from || "—"} />
+              {draft.accounts.length > 1 ? (
+                // A dropdown over configured accounts, never free text: a
+                // message may only claim an address its own mail server is
+                // authorised to send for, or it is rejected or filed as spam.
+                <select
+                  className={fieldClass}
+                  onChange={(event) => setAccountId(event.target.value)}
+                  value={accountId}
+                >
+                  {draft.accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input className={fieldClass} disabled readOnly value={draft.accounts[0]?.label || "—"} />
+              )}
               <span className="mt-1.5 block text-xs text-[#6f7885]">
-                Défini par la configuration d’envoi, pas modifiable ici.
+                {draft.accounts.length > 1
+                  ? "Choisissez parmi les adresses configurées."
+                  : "Défini par la configuration d’envoi, pas modifiable ici."}
               </span>
             </label>
 
