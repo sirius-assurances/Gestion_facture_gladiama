@@ -660,8 +660,8 @@ async function sendViaOAuthAccount(
     cc: data.cc?.length ? data.cc : undefined,
     replyTo: data.replyTo,
     subject: data.subject,
-    text: buildInvoiceText(data.body, message),
-    html: buildInvoiceHtml(data.body, message),
+    text: buildInvoiceText(data.body),
+    html: buildInvoiceHtml(data.body),
     attachment: { filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name), contentBase64: pdf.toString("base64") },
   });
 }
@@ -704,8 +704,8 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
         // Both parts: the HTML is what most clients show, the text is the
         // fallback for those that refuse it — and for spam filters, which
         // treat an HTML-only message as a smell.
-        text: buildInvoiceText(data.body, message),
-        html: buildInvoiceHtml(data.body, message),
+        text: buildInvoiceText(data.body),
+        html: buildInvoiceHtml(data.body),
         attachments: [
           {
             filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),

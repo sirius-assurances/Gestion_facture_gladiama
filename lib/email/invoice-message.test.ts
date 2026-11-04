@@ -100,37 +100,44 @@ describe("buildInvoiceSummary", () => {
 
 describe("buildInvoiceText", () => {
   it("keeps the sender's own wording", () => {
-    expect(buildInvoiceText("Bonjour Monsieur Diop,", withTva)).toContain("Bonjour Monsieur Diop,");
+    expect(buildInvoiceText("Bonjour Monsieur Diop,")).toContain("Bonjour Monsieur Diop,");
   });
 
-  it("appends the figures and the legal identifiers", () => {
-    const text = buildInvoiceText(buildInvoiceLetter(withTva), withTva);
+  it("appends the legal identifiers", () => {
+    const text = buildInvoiceText(buildInvoiceLetter(withTva));
 
-    expect(text).toContain("4 248 000 FCFA");
     expect(text).toContain("N.I.N.E.A : 009384629");
+  });
+
+  // The figures now live only in the attached PDF and in the sender's own
+  // preview (buildInvoiceSummary, shown read-only in the compose dialog) —
+  // not duplicated into the message itself, which is one less place for the
+  // two to disagree.
+  it("quotes no amounts — those stay in the attached PDF", () => {
+    expect(buildInvoiceText(buildInvoiceLetter(withTva))).not.toMatch(/FCFA/);
   });
 });
 
 describe("buildInvoiceHtml", () => {
   it("escapes the sender's text so a stray character cannot break the layout", () => {
-    expect(buildInvoiceHtml("Objet : <urgent> & suite", withTva)).toContain("&lt;urgent&gt; &amp; suite");
+    expect(buildInvoiceHtml("Objet : <urgent> & suite")).toContain("&lt;urgent&gt; &amp; suite");
   });
 
   it("keeps paragraph breaks from the letter", () => {
-    const html = buildInvoiceHtml("Premier paragraphe.\n\nSecond paragraphe.", withTva);
+    const html = buildInvoiceHtml("Premier paragraphe.\n\nSecond paragraphe.");
 
     expect(html.match(/<p /g) ?? []).toHaveLength(2);
   });
 
   // Mail clients strip <style> blocks and support neither flexbox nor grid.
   it("uses no layout a mail client would drop", () => {
-    const html = buildInvoiceHtml(buildInvoiceLetter(withTva), withTva);
+    const html = buildInvoiceHtml(buildInvoiceLetter(withTva));
 
     expect(html).not.toMatch(/<style|display:\s*(flex|grid)/);
   });
 
-  it("carries the same total as the text part", () => {
-    expect(buildInvoiceHtml(buildInvoiceLetter(withTva), withTva)).toContain("4 248 000 FCFA");
+  it("quotes no amounts — those stay in the attached PDF", () => {
+    expect(buildInvoiceHtml(buildInvoiceLetter(withTva))).not.toMatch(/FCFA/);
   });
 });
 

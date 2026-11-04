@@ -84,22 +84,15 @@ const LEGAL_FOOTER = [
   `N.I.N.E.A : ${COMPANY.ninea} — RC N° ${COMPANY.rc}`,
 ];
 
-/** Plain-text part, for clients that do not render HTML. */
-export function buildInvoiceText(letter: string, input: InvoiceMessageInput) {
-  const width = Math.max(...buildInvoiceSummary(input).map(([label]) => label.length));
-  const summary = buildInvoiceSummary(input).map(([label, value]) => `  ${label.padEnd(width)}  ${value}`);
-
-  return [
-    letter.trimEnd(),
-    "",
-    `RÉCAPITULATIF — FACTURE ${input.invoiceNumber}`,
-    ...summary,
-    "",
-    "La facture détaillée est jointe au format PDF.",
-    "",
-    "—",
-    ...LEGAL_FOOTER,
-  ].join("\n");
+/**
+ * Plain-text part, for clients that do not render HTML. No figures here —
+ * the letter already states the payment deadline, and repeating amounts in
+ * the message as well as the attached PDF is one more place for the two to
+ * drift apart. The sender still sees them all before sending: the compose
+ * dialog shows buildInvoiceSummary as a read-only preview of its own.
+ */
+export function buildInvoiceText(letter: string) {
+  return [letter.trimEnd(), "", "La facture détaillée est jointe au format PDF.", "", "—", ...LEGAL_FOOTER].join("\n");
 }
 
 function escapeHtml(value: string) {
@@ -115,7 +108,7 @@ function escapeHtml(value: string) {
  * <style> blocks and support neither flexbox nor grid, so anything more
  * modern collapses into an unreadable column in Outlook.
  */
-export function buildInvoiceHtml(letter: string, input: InvoiceMessageInput) {
+export function buildInvoiceHtml(letter: string) {
   const navy = "#172238";
   const orange = "#e8712b";
   const line = "#e4e3dd";
@@ -126,30 +119,15 @@ export function buildInvoiceHtml(letter: string, input: InvoiceMessageInput) {
     .map((block) => `<p style="margin:0 0 14px;line-height:1.6;">${escapeHtml(block).replace(/\n/g, "<br>")}</p>`)
     .join("");
 
-  const rows = buildInvoiceSummary(input)
-    .map(([label, value], index, all) => {
-      const last = index === all.length - 1;
-      const isTotal = label === "Montant total";
-      return `<tr>
-        <td style="padding:9px 0;border-bottom:${last ? "none" : `1px solid ${line}`};color:#6f7885;font-size:13px;">${escapeHtml(label)}</td>
-        <td style="padding:9px 0;border-bottom:${last ? "none" : `1px solid ${line}`};text-align:right;font-size:13px;color:${navy};font-weight:${isTotal ? "700" : "500"};">${escapeHtml(value)}</td>
-      </tr>`;
-    })
-    .join("");
-
   return `<!doctype html>
 <html lang="fr"><body style="margin:0;padding:24px 12px;background:#f5f4f0;font-family:Helvetica,Arial,sans-serif;color:${navy};">
 <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;width:100%;background:#ffffff;border:1px solid ${line};border-radius:12px;">
   <tr><td style="padding:26px 28px 0;">
     <div style="font-size:19px;font-weight:700;letter-spacing:0.5px;color:${orange};">${escapeHtml(COMPANY.name)}</div>
-    <div style="height:3px;width:52px;background:${orange};margin:10px 0 22px;"></div>
+    <div style="height:1px;width:52px;background:${orange};margin:10px 0 22px;"></div>
   </td></tr>
-  <tr><td style="padding:0 28px;font-size:14px;color:${navy};">${paragraphs}</td></tr>
-  <tr><td style="padding:10px 28px 0;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${orange};margin-bottom:6px;">Récapitulatif — facture ${escapeHtml(input.invoiceNumber)}</div>
-    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">${rows}</table>
-  </td></tr>
-  <tr><td style="padding:18px 28px 26px;font-size:13px;color:#6f7885;">La facture détaillée est jointe au format PDF.</td></tr>
+  <tr><td style="padding:0 28px 22px;font-size:14px;color:${navy};">${paragraphs}</td></tr>
+  <tr><td style="padding:0 28px 22px;font-size:13px;color:#6f7885;">La facture détaillée est jointe au format PDF.</td></tr>
   <tr><td style="padding:16px 28px 22px;border-top:1px solid ${line};font-size:11px;line-height:1.6;color:#9ba1a7;">
     ${LEGAL_FOOTER.map((entry) => escapeHtml(entry)).join("<br>")}
   </td></tr>
