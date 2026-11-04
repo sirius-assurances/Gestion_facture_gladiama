@@ -1,5 +1,6 @@
 import { COMPANY } from "@/lib/company";
 import { formatCfa } from "@/lib/format";
+import { SIGNATURE_CARD_CID } from "@/lib/email/signature-card-constants";
 
 export type InvoiceMessageInput = {
   invoiceNumber: string;
@@ -127,6 +128,9 @@ export function buildInvoiceHtml(letter: string) {
     <div style="height:1px;width:52px;background:${orange};margin:10px 0 22px;"></div>
   </td></tr>
   <tr><td style="padding:0 28px 22px;font-size:14px;color:${navy};">${paragraphs}</td></tr>
+  <tr><td style="padding:0 28px 22px;">
+    <img alt="${escapeHtml(COMPANY.name)}" height="191" src="cid:${SIGNATURE_CARD_CID}" style="display:block;border:0;border-radius:8px;" width="300" />
+  </td></tr>
   <tr><td style="padding:0 28px 22px;font-size:13px;color:#6f7885;">La facture détaillée est jointe au format PDF.</td></tr>
   <tr><td style="padding:16px 28px 22px;border-top:1px solid ${line};font-size:11px;line-height:1.6;color:#9ba1a7;">
     ${LEGAL_FOOTER.map((entry) => escapeHtml(entry)).join("<br>")}

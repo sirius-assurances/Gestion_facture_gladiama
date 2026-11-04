@@ -149,7 +149,10 @@ describe("sendMailViaGraph", () => {
       subject: "Facture N°30",
       html: "<p>Bonjour</p>",
       text: "Bonjour",
-      attachment: { filename: "Facture_30.pdf", contentBase64: "JVBERi0=" },
+      attachments: [
+        { filename: "Facture_30.pdf", contentBase64: "JVBERi0=", contentType: "application/pdf" },
+        { filename: "signature.png", contentBase64: "iVBORw0=", contentType: "image/png", isInline: true, contentId: "sig" },
+      ],
     });
 
     const [url, init] = fetchMock.mock.calls[0];
@@ -158,8 +161,14 @@ describe("sendMailViaGraph", () => {
     const payload = JSON.parse(init.body);
     expect(payload.message.toRecipients[0].emailAddress.address).toBe("client@exemple.com");
     expect(payload.message.ccRecipients[0].emailAddress.address).toBe("copie@exemple.com");
+    expect(payload.message.attachments).toHaveLength(2);
     expect(payload.message.attachments[0].name).toBe("Facture_30.pdf");
     expect(payload.message.attachments[0]["@odata.type"]).toBe("#microsoft.graph.fileAttachment");
+    // The inline image must carry isInline + a contentId, or Graph attaches
+    // it as an ordinary file and the html's cid: reference renders as a
+    // broken image instead of the signature card.
+    expect(payload.message.attachments[1].isInline).toBe(true);
+    expect(payload.message.attachments[1].contentId).toBe("sig");
     // Graph's own "save a copy" rather than the SMTP bcc-to-self trick used
     // for the other accounts, which exists only because plain SMTP has no
     // equivalent of this flag.
@@ -178,7 +187,7 @@ describe("sendMailViaGraph", () => {
         subject: "x",
         html: "x",
         text: "x",
-        attachment: { filename: "x.pdf", contentBase64: "AA==" },
+        attachments: [{ filename: "x.pdf", contentBase64: "AA==", contentType: "application/pdf" }],
       }),
     ).rejects.toThrow(/403/);
   });

@@ -17,6 +17,7 @@ import {
   buildInvoiceText,
   type InvoiceMessageInput,
 } from "@/lib/email/invoice-message";
+import { readSignatureCard, SIGNATURE_CARD_CID, SIGNATURE_CARD_FILENAME } from "@/lib/email/signature-card";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
 import { defaultClients, defaultInvoices } from "@/lib/seed-data";
 import { generateInvoicePdfBuffer } from "@/lib/pdf/server";
@@ -655,6 +656,7 @@ async function sendViaOAuthAccount(
     );
   }
 
+  const signature = await readSignatureCard();
   await sendMailViaGraph(accessToken, {
     to: data.to,
     cc: data.cc?.length ? data.cc : undefined,
@@ -662,7 +664,20 @@ async function sendViaOAuthAccount(
     subject: data.subject,
     text: buildInvoiceText(data.body),
     html: buildInvoiceHtml(data.body),
-    attachment: { filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name), contentBase64: pdf.toString("base64") },
+    attachments: [
+      {
+        filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
+        contentBase64: pdf.toString("base64"),
+        contentType: "application/pdf",
+      },
+      {
+        filename: SIGNATURE_CARD_FILENAME,
+        contentBase64: signature.toString("base64"),
+        contentType: "image/png",
+        isInline: true,
+        contentId: SIGNATURE_CARD_CID,
+      },
+    ],
   });
 }
 
@@ -711,6 +726,15 @@ export async function sendInvoiceEmail(input: z.infer<typeof emailDraftSchema>) 
             filename: buildAttachmentName(invoice.invoiceNumber, invoice.client.name),
             content: pdf,
             contentType: "application/pdf",
+          },
+          {
+            filename: SIGNATURE_CARD_FILENAME,
+            content: await readSignatureCard(),
+            contentType: "image/png",
+            // Referenced from the HTML body as cid:gladiama-signature-card —
+            // without this cid, it would arrive as an ordinary attachment
+            // rather than rendering inline where the letter expects it.
+            cid: SIGNATURE_CARD_CID,
           },
         ],
       });

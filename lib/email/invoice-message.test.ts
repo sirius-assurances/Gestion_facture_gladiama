@@ -139,6 +139,17 @@ describe("buildInvoiceHtml", () => {
   it("quotes no amounts — those stay in the attached PDF", () => {
     expect(buildInvoiceHtml(buildInvoiceLetter(withTva))).not.toMatch(/FCFA/);
   });
+
+  // The card is sent as an inline attachment (see signature-card.ts and the
+  // send actions), referenced here by cid: rather than a hosted URL — most
+  // clients block remote images until the recipient allows them, so a
+  // linked image would often render as a blank box.
+  it("references the signature card by cid, not a hosted URL", () => {
+    const html = buildInvoiceHtml(buildInvoiceLetter(withTva));
+
+    expect(html).toContain('src="cid:gladiama-signature-card"');
+    expect(html).not.toMatch(/src="https?:/);
+  });
 });
 
 describe("buildAttachmentName", () => {

@@ -123,7 +123,14 @@ export type GraphMailMessage = {
   subject: string;
   html: string;
   text: string;
-  attachment: { filename: string; contentBase64: string };
+  /** The PDF, plus any inline images referenced from html via `cid:` — see isInline/contentId. */
+  attachments: Array<{
+    filename: string;
+    contentBase64: string;
+    contentType: string;
+    isInline?: boolean;
+    contentId?: string;
+  }>;
 };
 
 /**
@@ -142,14 +149,14 @@ export async function sendMailViaGraph(accessToken: string, message: GraphMailMe
       ccRecipients: message.cc?.map((address) => ({ emailAddress: { address } })),
       replyTo: message.replyTo ? [{ emailAddress: { address: message.replyTo } }] : undefined,
       bccRecipients: message.bcc ? [{ emailAddress: { address: message.bcc } }] : undefined,
-      attachments: [
-        {
-          "@odata.type": "#microsoft.graph.fileAttachment",
-          name: message.attachment.filename,
-          contentType: "application/pdf",
-          contentBytes: message.attachment.contentBase64,
-        },
-      ],
+      attachments: message.attachments.map((attachment) => ({
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        name: attachment.filename,
+        contentType: attachment.contentType,
+        contentBytes: attachment.contentBase64,
+        isInline: attachment.isInline,
+        contentId: attachment.contentId,
+      })),
     },
     saveToSentItems: true,
   };
