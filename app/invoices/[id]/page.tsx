@@ -92,6 +92,23 @@ export default function InvoiceDetailsPage() {
     setInvoice((current) => (current ? { ...current, [key]: value } : current));
   };
 
+  // Switching client should bring that client's own pricing and TVA setting
+  // with it, the same way picking a client does when creating a new invoice —
+  // otherwise the price/TVA silently stay whatever the previous client had.
+  const handleClientChange = (name: string) => {
+    const client = clients.find((item) => item.name === name);
+    setInvoice((current) =>
+      current
+        ? {
+            ...current,
+            client: name,
+            unitPrice: client?.defaultUnitPrice ?? current.unitPrice,
+            hasTva: client?.hasTva ?? current.hasTva,
+          }
+        : current,
+    );
+  };
+
   // An invoice past "Brouillon" has gone to the client; its content is frozen
   // (see isInvoiceIssued).
   const issued = isInvoiceIssued(invoice.status);
@@ -270,7 +287,7 @@ export default function InvoiceDetailsPage() {
                 <select
                   className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"
                   value={invoice.client}
-                  onChange={(event) => updateField("client", event.target.value)}
+                  onChange={(event) => handleClientChange(event.target.value)}
                 >
                   {clients.map((client) => (
                     <option key={client.id} value={client.name}>
