@@ -38,5 +38,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|images/).*)"],
+  // manifest.webmanifest and icons/ must stay reachable without a session:
+  // the browser (and iOS/Android's install flow) fetches them unauthenticated
+  // when deciding whether the app is installable, before anyone has logged in.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|images/|icons/|manifest.webmanifest).*)"],
 };

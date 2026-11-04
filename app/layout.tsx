@@ -17,8 +17,20 @@ export const metadata: Metadata = {
   title: "Gladiama Factures",
   description: "Générez vos factures GLADIAMA en quelques secondes.",
   icons: {
-    icon: "/images/logo-gladiama.png",
-    apple: "/images/logo-gladiama.png",
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    // iOS ignores the manifest's icons entirely and only reads this one.
+    apple: "/icons/apple-touch-icon.png",
+  },
+  // Home-screen install on iOS Safari (it has no manifest-based install
+  // prompt like Android/Chrome — this is the only way it offers "standalone"
+  // display, hiding the browser chrome once added).
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Gladiama",
   },
 };
 
@@ -30,6 +42,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#172238",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
