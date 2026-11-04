@@ -15,6 +15,11 @@ type Props = {
 
 const fieldClass =
   "w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b] disabled:bg-[#f5f4f0] disabled:text-[#6f7885]";
+// For the single-line <input>s specifically: a value longer than the field
+// — a full sender address, several Cc addresses — was spilling past the
+// field's rounded border instead of clipping inside it like the rest of the
+// form. Not applied to the textarea, which wraps by design.
+const singleLineFieldClass = `${fieldClass} truncate`;
 
 /**
  * Review-before-send, rather than handing the message to a mail client.
@@ -128,7 +133,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
                 // message may only claim an address its own mail server is
                 // authorised to send for, or it is rejected or filed as spam.
                 <select
-                  className={fieldClass}
+                  className={singleLineFieldClass}
                   onChange={(event) => setAccountId(event.target.value)}
                   value={accountId}
                 >
@@ -139,7 +144,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
                   ))}
                 </select>
               ) : (
-                <input className={fieldClass} disabled readOnly value={draft.accounts[0]?.label || "—"} />
+                <input className={singleLineFieldClass} disabled readOnly value={draft.accounts[0]?.label || "—"} />
               )}
               <span className="mt-1.5 block text-xs text-[#6f7885]">
                 {draft.accounts.length > 1
@@ -163,7 +168,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
             <label className="block">
               <span className="mb-2 block text-sm font-semibold">À</span>
               <input
-                className={fieldClass}
+                className={singleLineFieldClass}
                 onChange={(event) => setTo(event.target.value)}
                 placeholder="client@exemple.com"
                 type="email"
@@ -176,7 +181,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
                 Cc <span className="font-normal text-[#6f7885]">(facultatif)</span>
               </span>
               <input
-                className={fieldClass}
+                className={singleLineFieldClass}
                 onChange={(event) => setCc(event.target.value)}
                 placeholder="une@adresse.com, une-autre@adresse.com"
                 value={cc}
@@ -193,7 +198,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
                 Répondre à <span className="font-normal text-[#6f7885]">(facultatif)</span>
               </span>
               <input
-                className={fieldClass}
+                className={singleLineFieldClass}
                 onChange={(event) => setReplyTo(event.target.value)}
                 placeholder="Laisser vide pour utiliser l’expéditeur"
                 type="email"
@@ -203,7 +208,7 @@ export default function EmailDialog({ invoiceId, invoiceNumber, isDraft, onClose
 
             <label className="block">
               <span className="mb-2 block text-sm font-semibold">Objet</span>
-              <input className={fieldClass} onChange={(event) => setSubject(event.target.value)} value={subject} />
+              <input className={singleLineFieldClass} onChange={(event) => setSubject(event.target.value)} value={subject} />
             </label>
 
             <label className="block">
