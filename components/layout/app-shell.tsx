@@ -16,7 +16,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Sidebar />
-      <div className="lg:pl-[248px]">{children}</div>
+      {/* pb clears MobileNav, which is fixed to the viewport bottom on mobile
+          and would otherwise sit on top of each page's last rows/buttons. */}
+      <div className="pb-24 lg:pb-0 lg:pl-[248px]">{children}</div>
       <MobileNav />
     </>
   );
