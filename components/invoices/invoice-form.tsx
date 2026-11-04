@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Mail, MessageCircle, Save } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createInvoice, getClients, getNextInvoiceNumber, setNextInvoiceNumber } from "@/app/actions/billing";
 import type { ClientRecord } from "@/lib/invoice";
 import { computeInvoiceTotals, TVA_RATE_PERCENT } from "@/lib/invoice-totals";
@@ -11,6 +11,7 @@ import { downloadInvoicePdf, generateInvoiceDocument, type InvoicePdfData } from
 import { openEmailFallback, openWhatsAppFallback, sharePDF } from "@/lib/share";
 
 export default function InvoiceForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [clientName, setClientName] = useState("");
@@ -21,7 +22,7 @@ export default function InvoiceForm() {
   const [periodStart, setPeriodStart] = useState("2026-09-01");
   const [periodEnd, setPeriodEnd] = useState("2026-09-17");
   const [dueDate, setDueDate] = useState("2026-10-17");
-  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [shareNotice, setShareNotice] = useState("");
   const [actionError, setActionError] = useState("");
   const [nextNumber, setNextNumber] = useState("");
@@ -45,7 +46,11 @@ export default function InvoiceForm() {
       }
     }
     void loadForm();
-  }, [searchParams]);
+    // Mount-only: searchParams can get a new identity from Next.js without the
+    // "client" query actually changing, and re-running this would silently
+    // overwrite whichever client the user has since picked from the dropdown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totals = useMemo(
     () => computeInvoiceTotals(quantity, unitPrice, hasTva),
@@ -124,15 +129,18 @@ export default function InvoiceForm() {
       status: "Brouillon" as const,
     };
     setActionError("");
+    setSaving(true);
     try {
       await createInvoice(invoice);
-      setNextNumber(await getNextInvoiceNumber());
     } catch {
       setActionError("Impossible d'enregistrer cette facture. Vérifiez les champs et réessayez.");
+      setSaving(false);
       return;
     }
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2500);
+    // Straight to the Brouillons list rather than leaving the sender on a now
+    // half-stale form: afficher/envoyer the invoice they just saved is the
+    // very next thing they do.
+    router.push("/invoices?status=Brouillon");
   }
 
   async function handleDownload() {
@@ -283,13 +291,14 @@ export default function InvoiceForm() {
         </label>
 
         <button
-          className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#172238] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#263957]"
+          className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#172238] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#263957] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={saving}
           type="button"
           onClick={handleSave}
         >
-          {saved ? (
+          {saving ? (
             <>
-              <Check size={18} /> Brouillon enregistré
+              <Check size={18} /> Enregistrement…
             </>
           ) : (
             <>
