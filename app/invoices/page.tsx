@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Eye, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { getInvoicesPage, removeInvoice, updateInvoiceStatus as updateInvoiceStatusInDatabase } from "@/app/actions/billing";
 import {
   getInvoiceDueDate,
@@ -17,9 +18,27 @@ import {
 const filterOptions: Array<"Toutes" | InvoiceStatus> = ["Toutes", "Brouillon", "Envoyée", "Payée"];
 const PAGE_SIZE = 15;
 
+// useSearchParams forces this below "/invoices" to opt out of static
+// prerendering unless wrapped in Suspense (it reads the ?status= redirect
+// target from invoice-form.tsx's save-draft redirect).
 export default function InvoicesPage() {
+  return (
+    <Suspense>
+      <InvoicesPageContent />
+    </Suspense>
+  );
+}
+
+function InvoicesPageContent() {
+  const searchParams = useSearchParams();
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
-  const [filter, setFilter] = useState<"Toutes" | InvoiceStatus>("Toutes");
+  // Lets a redirect land here already filtered — e.g. straight to Brouillon
+  // after saving a new draft — via ?status=Brouillon. Read once: this filter
+  // is then owned by changeFilter, same as the rest of the page's state.
+  const [filter, setFilter] = useState<"Toutes" | InvoiceStatus>(() => {
+    const requested = searchParams.get("status");
+    return (filterOptions as string[]).includes(requested ?? "") ? (requested as InvoiceStatus) : "Toutes";
+  });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [statusCounts, setStatusCounts] = useState<Record<InvoiceStatus, number>>({ Brouillon: 0, Envoyée: 0, Payée: 0 });
