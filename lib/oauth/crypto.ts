@@ -12,6 +12,10 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
  * decrypt rather than silently returning garbage that gets used as a token.
  */
 const ALGORITHM = "aes-256-gcm";
+// GCM's security margin comes from its 16-byte auth tag; Node allows a
+// shorter one unless told not to, which is exactly the "tag truncation"
+// weakening this pins against.
+const AUTH_TAG_LENGTH = 16;
 
 function deriveKey(): Buffer {
   const secret = process.env.TOKEN_ENCRYPTION_KEY;
@@ -24,7 +28,7 @@ function deriveKey(): Buffer {
 export function encryptToken(plaintext: string): string {
   const key = deriveKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   // iv : authTag : ciphertext, each base64, so one text column holds it all.
@@ -36,8 +40,10 @@ export function decryptToken(stored: string): string {
   if (!ivB64 || !authTagB64 || !ciphertextB64) throw new Error("Malformed encrypted token.");
 
   const key = deriveKey();
-  const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivB64, "base64"));
-  decipher.setAuthTag(Buffer.from(authTagB64, "base64"));
+  const authTag = Buffer.from(authTagB64, "base64");
+  if (authTag.length !== AUTH_TAG_LENGTH) throw new Error("Malformed encrypted token.");
+  const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivB64, "base64"), { authTagLength: AUTH_TAG_LENGTH });
+  decipher.setAuthTag(authTag);
   const plaintext = Buffer.concat([decipher.update(Buffer.from(ciphertextB64, "base64")), decipher.final()]);
   return plaintext.toString("utf8");
 }
