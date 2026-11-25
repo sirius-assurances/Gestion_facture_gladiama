@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isUserEmailAllowed } from "@/lib/auth/allowed-users";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -21,16 +22,22 @@ export async function proxy(request: NextRequest) {
   });
 
   const { data: { user } } = await supabase.auth.getUser();
+  // A confirmed Supabase account only proves it's a real, confirmed email —
+  // not that this app should trust it. If Supabase's own public sign-up is
+  // ever left on (the default for a new project), this is what stops a
+  // stranger's new account from reaching anything past this point. See
+  // lib/auth/allowed-users.ts.
+  const isAllowed = Boolean(user) && isUserEmailAllowed(user?.email);
   const isLoginRoute = request.nextUrl.pathname === "/login";
 
-  if (!user && !isLoginRoute) {
+  if (!isAllowed && !isLoginRoute) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && isLoginRoute) {
+  if (isAllowed && isLoginRoute) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
+import { isUserEmailAllowed } from "@/lib/auth/allowed-users";
 import { formatFrenchDate } from "@/lib/format";
 import { createTransport, formatSender, readMailerAccounts } from "@/lib/email/mailer";
 import { COMPANY } from "@/lib/company";
@@ -106,6 +107,11 @@ async function requireUser() {
   const supabase = await createSupabaseServerClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) throw new Error("Authentification requise.");
+  // A valid Supabase session only proves the account is real and confirmed —
+  // it says nothing about whether this app should trust it. See
+  // lib/auth/allowed-users.ts for why this check exists independently of
+  // Supabase's own sign-up settings.
+  if (!isUserEmailAllowed(user.email)) throw new Error("Authentification requise.");
   return user;
 }
 
