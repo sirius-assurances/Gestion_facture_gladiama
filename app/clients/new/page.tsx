@@ -9,10 +9,16 @@ import { parseRecipients } from "@/lib/email/invoice-message";
 
 export default function NewClientPage() {
   const [saved, setSaved] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Without this guard, a double-click/double-tap before createClient's
+    // first call resolves fires a second insert — the same client saved
+    // twice under two different ids rather than once.
+    if (submitting) return;
+    setSubmitting(true);
 
     const data = new FormData(event.currentTarget);
     const client = {
@@ -28,11 +34,21 @@ export default function NewClientPage() {
       hasTva: data.get("tva") === "on",
     };
 
-    if (!client.name) return;
+    if (!client.name) {
+      setSubmitting(false);
+      return;
+    }
 
-    await createClient(client);
-    setSaved(true);
-    window.setTimeout(() => router.push("/clients"), 700);
+    try {
+      await createClient(client);
+      setSaved(true);
+      window.setTimeout(() => router.push("/clients"), 700);
+    } catch {
+      // Left submittable: a client that failed to save (network blip, a
+      // rejected duplicate) must stay retryable, not locked behind a button
+      // stuck disabled with no feedback.
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -110,8 +126,12 @@ export default function NewClientPage() {
             <button type="button" className="rounded-xl border border-[#e4e3dd] bg-white px-4 py-3 text-sm font-semibold text-[#172238] hover:border-[#d9d8d1]" onClick={() => router.push("/clients")}>
               Annuler
             </button>
-            <button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-[#e8712b] px-5 py-3 text-sm font-semibold text-white hover:bg-[#d86322]">
-              <Save size={17} /> {saved ? <><Check size={17} /> Enregistré</> : "Enregistrer"}
+            <button
+              className="inline-flex items-center gap-2 rounded-xl bg-[#e8712b] px-5 py-3 text-sm font-semibold text-white hover:bg-[#d86322] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={submitting}
+              type="submit"
+            >
+              <Save size={17} /> {saved ? <><Check size={17} /> Enregistré</> : submitting ? "Enregistrement…" : "Enregistrer"}
             </button>
           </div>
         </form>
