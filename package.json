@@ -21,19 +21,19 @@
     "check:smtp": "node --env-file=.env scripts/check-smtp.mjs"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.47.0",
-    "next": "16.3.5",
-    "nodemailer": "^10.0.15",
+    "next": "^16.4.6",
+    "nodemailer": "^10.6.1",
     "pg": "^8.23.0",
-    "prisma": "^7.10.0",
+    "prisma": "^7.10.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -43,7 +43,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "^16.4.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"
