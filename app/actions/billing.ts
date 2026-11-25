@@ -844,6 +844,16 @@ export async function updateClient(client: ClientRecord) {
 export async function removeClient(clientId: string) {
   await requireUser();
   const id = z.string().min(1).parse(clientId);
+  // Invoice.client cascades on delete: removing a client with no guard would
+  // silently take every one of its invoices with it, issued/paid ones
+  // included — the same document-loss risk as removeInvoice, just reached
+  // through the client instead of the invoice.
+  const issuedCount = await prisma.invoice.count({ where: { clientId: id, status: { not: "DRAFT" } } });
+  if (issuedCount > 0) {
+    throw new Error(
+      `Ce client a ${issuedCount} facture(s) émise(s) ou payée(s) : suppression refusée pour ne pas les perdre.`,
+    );
+  }
   await prisma.client.delete({ where: { id } });
 }
 
@@ -936,5 +946,13 @@ export async function updateInvoiceStatus(invoiceNumber: string, status: Invoice
 export async function removeInvoice(invoiceNumber: string) {
   await requireUser();
   const number = z.string().min(1).parse(invoiceNumber);
+  const invoice = await prisma.invoice.findUnique({ where: { invoiceNumber: number } });
+  if (!invoice) return;
+  // A Brouillon was never sent — deleting one is just discarding a draft.
+  // Once issued (Envoyée/Payée) it's a real document a client already has;
+  // deleting it would erase the only record of what was billed, leaving a
+  // gap in the numbering with no trace of why. Correct it via "Brouillon"
+  // instead (isInvoiceIssued), never a hard delete.
+  if (isInvoiceIssued(invoice.status as InvoiceStatus)) throw new Error(INVOICE_ISSUED_MESSAGE);
   await prisma.invoice.delete({ where: { invoiceNumber: number } });
 }
