@@ -5,6 +5,7 @@ import { LockKeyhole, LogIn, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { safeRelativePath } from "@/lib/safe-redirect";
 
 function LoginForm() {
   const router = useRouter();
@@ -26,7 +27,9 @@ function LoginForm() {
       return;
     }
 
-    router.replace(searchParams.get("next") || "/");
+    // ?next= comes straight off the URL — a crafted login link pointing it
+    // at an external host would send a just-authenticated user there.
+    router.replace(safeRelativePath(searchParams.get("next"), "/"));
     router.refresh();
   }
 

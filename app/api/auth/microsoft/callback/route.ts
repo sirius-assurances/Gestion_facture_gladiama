@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { encryptToken } from "@/lib/oauth/crypto";
 import { exchangeCodeForTokens, fetchMicrosoftProfile, readMicrosoftOAuthConfig } from "@/lib/oauth/microsoft";
+import { safeRelativePath } from "@/lib/safe-redirect";
+import { isUserEmailAllowed } from "@/lib/auth/allowed-users";
 
 const STATE_COOKIE = "ms_oauth_state";
 
@@ -30,10 +32,22 @@ export async function GET(request: Request) {
     // Malformed cookie falls back to /invoices below; the real failure is
     // reported regardless.
   }
+  // Belt and suspenders: /connect already only ever stored a same-app path
+  // here, but this is the value a redirect actually fires with, so it's
+  // re-checked at the point of use rather than trusted from storage.
+  returnTo = safeRelativePath(returnTo, "/invoices");
 
   const fail = (message: string) => NextResponse.redirect(new URL(`${returnTo}?microsoft_error=${encodeURIComponent(message)}`, url));
 
-  if (providerError) return fail(providerError);
+  // providerError is attacker-reachable text (anyone can hit this callback
+  // URL with their own ?error_description=), displayed verbatim on the
+  // invoice page — React escapes it so it can't inject markup, but it could
+  // still read as a plausible, misleading message ("your account is
+  // suspended, call …"). Logged for debugging, never shown as-is.
+  if (providerError) {
+    console.error("Microsoft OAuth callback error:", providerError);
+    return fail("La connexion Microsoft a échoué. Réessayez.");
+  }
   if (!code || !returnedState) return fail("Réponse Microsoft incomplète.");
 
   // The state Microsoft echoes back must match the one this app generated
@@ -54,7 +68,7 @@ export async function GET(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/login", url));
+  if (!user || !isUserEmailAllowed(user.email)) return NextResponse.redirect(new URL("/login", url));
 
   const config = readMicrosoftOAuthConfig();
   if (!config.ok) return fail("Connexion Microsoft non configurée côté serveur.");

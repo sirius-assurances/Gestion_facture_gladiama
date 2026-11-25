@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { buildAuthorizeUrl, readMicrosoftOAuthConfig } from "@/lib/oauth/microsoft";
+import { safeRelativePath } from "@/lib/safe-redirect";
+import { isUserEmailAllowed } from "@/lib/auth/allowed-users";
 
 /** Name kept in sync with the one the callback route reads back. */
 const STATE_COOKIE = "ms_oauth_state";
@@ -22,7 +24,7 @@ export async function GET(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/login", url));
+  if (!user || !isUserEmailAllowed(user.email)) return NextResponse.redirect(new URL("/login", url));
 
   const config = readMicrosoftOAuthConfig();
   if (!config.ok) {
@@ -31,8 +33,11 @@ export async function GET(request: Request) {
   }
 
   // returnTo: where to send the browser back after Microsoft redirects here
-  // with a code — typically the invoice the sender was on.
-  const returnTo = url.searchParams.get("returnTo") || "/invoices";
+  // with a code — typically the invoice the sender was on. Restricted to a
+  // same-app path: an attacker-supplied external URL here would only show up
+  // *after* the real Microsoft login step, right where a phished user is
+  // primed to type a password again.
+  const returnTo = safeRelativePath(url.searchParams.get("returnTo"), "/invoices");
   const csrf = randomBytes(24).toString("hex");
 
   const cookieStore = await cookies();
