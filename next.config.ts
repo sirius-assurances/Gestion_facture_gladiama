@@ -8,6 +8,22 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/*": ["./public/images/**/*.png"],
   },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // Blocks clickjacking: without this, the email-compose dialog (or
+          // any page) could be framed on an attacker's site with invisible
+          // overlays tricking a click into sending as the real user.
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
