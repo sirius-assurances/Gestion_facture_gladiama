@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Infrastructure accounts
+
+- **Supabase project** (`skhuhhmyhkjqnlgixnga`, org "imambusnesscompte's Org"): created under `imamdaillo389@gmail.com`.
+
 ## Getting Started
 
 First, run the development server:
