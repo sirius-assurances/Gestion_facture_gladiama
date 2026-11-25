@@ -85,6 +85,19 @@ export default function ClientEditPage() {
             </label>
 
             <label className="block sm:col-span-2">
+              <span className="mb-2 block text-sm font-semibold">Nom affiché sur la facture (optionnel)</span>
+              <input
+                className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"
+                placeholder="Ex. CONSTRUCEN S/C GRANUSEN"
+                value={client.invoiceDisplayName ?? ""}
+                onChange={(event) => updateField("invoiceDisplayName", event.target.value)}
+              />
+              <span className="mt-1.5 block text-xs text-[#6f7885]">
+                Remplace le nom du client sur le PDF de la facture (en-tête et ligne OBJET) si différent. Laissez vide pour utiliser le nom du client.
+              </span>
+            </label>
+
+            <label className="block sm:col-span-2">
               <span className="mb-2 block text-sm font-semibold">Localisation</span>
               <input
                 className="w-full rounded-xl border border-[#d9d8d1] bg-white px-4 py-3 text-sm outline-none focus:border-[#e8712b]"

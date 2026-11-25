@@ -44,6 +44,7 @@ const money = z.number().finite().min(0).max(1_000_000_000_000);
 
 const clientInputSchema = z.object({
   name: z.string().trim().min(1, "Nom requis.").max(200),
+  invoiceDisplayName: z.string().trim().max(200).optional(),
   location: z.string().trim().min(1, "Localisation requise.").max(200),
   phone: z.string().trim().max(30).optional(),
   email: z.string().trim().email("Email invalide.").max(200).optional().or(z.literal("")),
@@ -131,6 +132,7 @@ function mapClient(client: Awaited<ReturnType<typeof prisma.client.findMany>>[nu
   return {
     id: client.id,
     name: client.name,
+    invoiceDisplayName: client.invoiceDisplayName ?? undefined,
     location: client.location,
     phone: client.phone ?? undefined,
     email: client.email ?? undefined,
@@ -477,7 +479,7 @@ async function renderInvoicePdf(invoice: InvoiceWithRelations) {
   const item = invoice.items[0];
   return generateInvoicePdfBuffer({
     invoiceNumber: invoice.invoiceNumber,
-    clientName: invoice.client.name,
+    clientName: invoice.client.invoiceDisplayName || invoice.client.name,
     clientLocation: invoice.client.location,
     projectName: invoice.client.projectName ?? undefined,
     marketNumber: invoice.client.marketNumber ?? undefined,
@@ -805,6 +807,7 @@ export async function createClient(input: Omit<ClientRecord, "id">) {
   const client = await prisma.client.create({
     data: {
       ...data,
+      invoiceDisplayName: data.invoiceDisplayName || null,
       defaultUnitPrice: amount(data.defaultUnitPrice),
       phone: data.phone || null,
       email: data.email || null,
@@ -826,6 +829,7 @@ export async function updateClient(client: ClientRecord) {
     where: { id: data.id },
     data: {
       name: data.name,
+      invoiceDisplayName: data.invoiceDisplayName || null,
       location: data.location,
       phone: data.phone || null,
       email: data.email || null,

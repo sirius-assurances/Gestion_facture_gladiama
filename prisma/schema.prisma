@@ -11,6 +11,11 @@ datasource db {
 model Client {
   id               String    @id @default(uuid())
   name             String
+  /// What's printed as the billed-to name on the invoice PDF when it
+  /// differs from `name` (see migration 0010) — e.g. a subcontractor billed
+  /// "CONSTRUCEN S/C GRANUSEN" rather than just "GRANUSEN". Falls back to
+  /// `name` everywhere else (lists, the client picker, search).
+  invoiceDisplayName String?
   location         String    @default("Dakar, Sénégal")
   phone            String?
   email            String?

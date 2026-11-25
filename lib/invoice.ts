@@ -3,6 +3,14 @@ export type InvoiceStatus = "Brouillon" | "Envoyée" | "Payée";
 export type ClientRecord = {
   id: string;
   name: string;
+  /**
+   * What's printed as the billed-to name on the invoice PDF (top block and
+   * the OBJET line) when it differs from the client's own name — e.g. a
+   * subcontractor billed "CONSTRUCEN S/C GRANUSEN" rather than "GRANUSEN".
+   * Falls back to `name` everywhere else in the app (lists, the client
+   * picker, search) so that stays the one name used for finding the client.
+   */
+  invoiceDisplayName?: string;
   location: string;
   phone?: string;
   email?: string;

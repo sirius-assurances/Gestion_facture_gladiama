@@ -95,7 +95,7 @@ export default function InvoiceForm() {
     const client = clients.find((item) => item.name === clientName);
     return {
       invoiceNumber: nextNumber,
-      clientName,
+      clientName: client?.invoiceDisplayName || clientName,
       clientLocation: client?.location ?? "Dakar, Sénégal",
       projectName: client?.projectName,
       marketNumber: client?.marketNumber,
